@@ -63,24 +63,26 @@ def dashboard():
     ).all()
     
     monthly_income = sum(t.amount for t in monthly_transactions if t.transaction_type == 'income')
+    monthly_taxable_income = sum(t.amount for t in monthly_transactions if t.transaction_type == 'income' and t.is_taxable)
     monthly_expenses = sum(t.amount for t in monthly_transactions if t.transaction_type == 'expense')
     monthly_net_balance = monthly_income - monthly_expenses
     
-    # Calculate tax amount for this month based on income and budget info
+    # Calculate tax amount for this month based on TAXABLE income only
     monthly_tax_amount = 0
-    if active_budget and monthly_income > 0:
+    if active_budget and monthly_taxable_income > 0:
         try:
             calculator = TaxCalculator()
-            # Calculate what percentage of annual income this month's income represents
-            income_percentage = monthly_income / (active_budget.annual_income / 12)
+            # Calculate what percentage of annual income this month's TAXABLE income represents
+            taxable_income_percentage = monthly_taxable_income / (active_budget.annual_income / 12)
             # Apply that percentage to the monthly tax estimate
-            monthly_tax_amount = active_budget.monthly_taxes * income_percentage
+            monthly_tax_amount = active_budget.monthly_taxes * taxable_income_percentage
         except Exception as e:
             print(f"Error calculating monthly tax amount: {e}")
             monthly_tax_amount = 0
     
     # Calculate all-time totals for net worth calculation
     total_income = sum(t.amount for t in transactions if t.transaction_type == 'income')
+    total_taxable_income = sum(t.amount for t in transactions if t.transaction_type == 'income' and t.is_taxable)
     total_expenses = sum(t.amount for t in transactions if t.transaction_type == 'expense')
     net_balance = total_income - total_expenses
     
@@ -244,11 +246,13 @@ def dashboard():
     return render_template('dashboard.html',
                          # Monthly stats (for top summary cards)
                          monthly_income=monthly_income,
+                         monthly_taxable_income=monthly_taxable_income,
                          monthly_expenses=monthly_expenses,
                          monthly_net_balance=monthly_net_balance,
                          monthly_tax_amount=monthly_tax_amount,
                          # All-time stats (for net worth calculation)
                          total_income=total_income,
+                         total_taxable_income=total_taxable_income,
                          total_expenses=total_expenses,
                          net_balance=net_balance,
                          total_debt=total_debt,
@@ -325,12 +329,29 @@ def add_transaction():
         else:
             account_id = None
         
+        # Handle is_taxable field (only applies to income transactions)
+        transaction_type = request.form['transaction_type']
+        is_taxable = True  # Default for expenses
+        if transaction_type == 'income':
+            # Check if user explicitly marked as non-taxable, or if category suggests non-taxable
+            is_taxable = request.form.get('is_taxable') == 'on'
+            
+            # Auto-detect non-taxable categories
+            non_taxable_keywords = [
+                'gift', 'refund', 'insurance', 'inheritance', 'settlement', 
+                'prize', 'lottery', 'gambling', 'transfer', 'loan'
+            ]
+            category_lower = category.lower()
+            if any(keyword in category_lower for keyword in non_taxable_keywords):
+                is_taxable = False
+        
         transaction = Transaction(
             amount=float(request.form['amount']),
             date=datetime.strptime(request.form['date'], '%Y-%m-%d').date(),
             category=category,
             description=request.form.get('description', ''),
-            transaction_type=request.form['transaction_type'],
+            transaction_type=transaction_type,
+            is_taxable=is_taxable,
             account_id=account_id
         )
         db.session.add(transaction)

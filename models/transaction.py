@@ -8,6 +8,7 @@ class Transaction(db.Model):
     category = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     transaction_type = db.Column(db.String(20), nullable=False)  # 'income' or 'expense'
+    is_taxable = db.Column(db.Boolean, nullable=False, default=True)  # Whether income is taxable (gifts, refunds, etc. are not)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True)  # Made nullable for existing data
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -22,5 +23,6 @@ class Transaction(db.Model):
             'category': self.category,
             'description': self.description,
             'transaction_type': self.transaction_type,
+            'is_taxable': self.is_taxable,
             'created_at': self.created_at.isoformat()
         }

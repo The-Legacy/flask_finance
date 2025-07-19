@@ -18,6 +18,10 @@
                     <div>
                         <h6 class="card-title">Total Income (This Month)</h6>
                         <h3 class="mb-0">${{ "%.2f"|format(monthly_income) }}</h3>
+                        <small class="opacity-75">
+                            Taxable: ${{ "%.2f"|format(monthly_taxable_income) }} | 
+                            Non-taxable: ${{ "%.2f"|format(monthly_income - monthly_taxable_income) }}
+                        </small>
                     </div>
                     <i class="bi bi-arrow-up-circle fs-1"></i>
                 </div>

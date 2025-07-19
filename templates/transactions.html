@@ -137,6 +137,13 @@
                                         <span class="badge {% if transaction.transaction_type == 'income' %}bg-success{% else %}bg-danger{% endif %}">
                                             {{ transaction.transaction_type.title() }}
                                         </span>
+                                        {% if transaction.transaction_type == 'income' %}
+                                            {% if transaction.is_taxable %}
+                                                <small class="text-muted ms-1" title="Taxable income">💰</small>
+                                            {% else %}
+                                                <small class="text-warning ms-1" title="Non-taxable income (gift, refund, etc.)">🎁</small>
+                                            {% endif %}
+                                        {% endif %}
                                     </td>
                                     <td class="text-end {% if transaction.transaction_type == 'income' %}text-success{% else %}text-danger{% endif %}">
                                         {% if transaction.transaction_type == 'income' %}+{% else %}-{% endif %}${{ "%.2f"|format(transaction.amount) }}
@@ -218,20 +225,21 @@
                         </select>
                         <small class="text-muted">Optional: Select which account this transaction affects</small>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Account</label>
-                        <select class="form-select" name="account_id">
-                            <option value="">No specific account</option>
-                            {% for account in accounts %}
-                            <option value="{{ account.id }}">
-                                {{ account.name }} 
-                                {% if account.bank_name %}({{ account.bank_name }}){% endif %}
-                                - ${{ "%.2f"|format(account.current_balance) }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <small class="text-muted">Optional: Select which account this transaction affects</small>
+                    
+                    <!-- Taxable Income Checkbox (only shown for income transactions) -->
+                    <div class="mb-3" id="taxable_section" style="display: none;">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="is_taxable" name="is_taxable" checked>
+                            <label class="form-check-label" for="is_taxable">
+                                <strong>This income is taxable</strong>
+                            </label>
+                        </div>
+                        <small class="text-muted">
+                            ℹ️ Uncheck this for gifts, refunds, insurance payouts, inheritances, and other non-taxable income.
+                            This affects tax calculations in your budget analysis.
+                        </small>
                     </div>
+                    
                     <div class="mb-3">
                         <label class="form-label">Amount *</label>
                         <div class="input-group">
@@ -383,12 +391,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const customCategoryInput = document.getElementById('custom_category');
     const customCategoryCheck = document.getElementById('custom_category_check');
     const useCustomCheckbox = document.getElementById('use_custom');
+    const taxableSection = document.getElementById('taxable_section');
     
     transactionTypeSelect.addEventListener('change', function() {
         const selectedType = this.value;
         
         // Clear and enable category select
         categorySelect.innerHTML = '<option value="">Choose category...</option>';
+        
+        // Show/hide taxable section based on transaction type
+        if (selectedType === 'income') {
+            taxableSection.style.display = 'block';
+        } else {
+            taxableSection.style.display = 'none';
+        }
         
         if (selectedType && categoryOptions[selectedType]) {
             categorySelect.disabled = false;
@@ -424,6 +440,25 @@ document.addEventListener('DOMContentLoaded', function() {
             categorySelect.required = true;
         }
     });
+    
+    // Auto-detect non-taxable categories
+    const isTaxableCheckbox = document.getElementById('is_taxable');
+    const nonTaxableKeywords = ['gift', 'refund', 'insurance', 'inheritance', 'settlement', 'prize', 'lottery', 'gambling', 'transfer', 'loan'];
+    
+    function checkTaxableStatus() {
+        if (transactionTypeSelect.value === 'income') {
+            const category = categorySelect.value || customCategoryInput.value || '';
+            const categoryLower = category.toLowerCase();
+            
+            // Check if category suggests non-taxable income
+            const isNonTaxable = nonTaxableKeywords.some(keyword => categoryLower.includes(keyword));
+            isTaxableCheckbox.checked = !isNonTaxable;
+        }
+    }
+    
+    // Add listeners for category changes
+    categorySelect.addEventListener('change', checkTaxableStatus);
+    customCategoryInput.addEventListener('input', checkTaxableStatus);
 });
 </script>
 {% endblock %}
