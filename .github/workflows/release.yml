@@ -89,11 +89,68 @@ jobs:
         echo PyInstaller build completed
         dir dist
 
+    - name: Create README for release
+      run: |
+        cat > README-RELEASE.txt << 'EOF'
+        Flask Finance - Personal Finance Tracker
+        ========================================
+        
+        Thank you for downloading Flask Finance!
+        
+        QUICK START:
+        -----------
+        1. Extract this ZIP file to a folder of your choice
+        2. Run the executable file:
+           - Windows: Double-click flask-finance-windows.exe
+           - Linux/macOS: Open terminal, navigate to folder, run ./flask-finance-*
+        3. Open your web browser and go to: http://localhost:5000
+        4. Start tracking your finances!
+        
+        FEATURES:
+        --------
+        • Transaction tracking (income & expenses)
+        • Account management and reconciliation
+        • Investment portfolio tracking
+        • Loan and debt management
+        • Budget planning and analysis
+        • Tax calculations
+        
+        NOTES:
+        -----
+        • No Python installation required - this is a standalone executable
+        • Your data is stored locally in a SQLite database
+        • The app runs on your computer - no internet connection needed
+        • To stop the app, close the terminal/command prompt or press Ctrl+C
+        
+        SUPPORT:
+        -------
+        For issues, questions, or feature requests, please visit:
+        https://github.com/The-Legacy/flask_finance
+        
+        EOF
+
+    - name: Package executable into ZIP (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        cd dist
+        cp ../README-RELEASE.txt .
+        zip -r ${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }} README-RELEASE.txt
+        ls -la *.zip
+
+    - name: Package executable into ZIP (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        cd dist
+        copy ..\README-RELEASE.txt .
+        Compress-Archive -Path ${{ matrix.artifact_name }}, README-RELEASE.txt -DestinationPath ${{ matrix.asset_name }}.zip
+        dir *.zip
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: dist/${{ matrix.artifact_name }}*
+        path: dist/${{ matrix.asset_name }}.zip
 
   release:
     needs: build
@@ -117,33 +174,41 @@ jobs:
         body: |
           ## Flask Finance Release ${{ github.ref_name }}
           
-          ### Download the executable for your platform:
+          ### Download and Installation:
           
-          - **Windows**: Download `flask-finance-windows-x64.exe`
-          - **Linux**: Download `flask-finance-linux-x64`
-          - **macOS**: Download `flask-finance-macos-x64`
+          1. **Download the ZIP file for your platform:**
+             - **Windows**: `flask-finance-windows-x64.exe.zip`
+             - **Linux**: `flask-finance-linux-x64.zip`
+             - **macOS**: `flask-finance-macos-x64.zip`
           
-          ### How to run:
+          2. **Extract the ZIP file** to a folder of your choice
           
-          1. Download the appropriate executable for your operating system
-          2. Make it executable (Linux/macOS): `chmod +x flask-finance-*`
-          3. Run the executable
-          4. Open your web browser and go to `http://localhost:5000`
+          3. **Run the executable:**
+             - **Windows**: Double-click `flask-finance-windows.exe`
+             - **Linux/macOS**: Open terminal, navigate to the extracted folder, and run `./flask-finance-*`
+             
+          4. **Open your web browser** and go to `http://localhost:5000`
           
           ### Features:
-          - Personal finance tracking
-          - Account management and reconciliation
-          - Transaction tracking
-          - Investment portfolio management
-          - Loan and debt tracking
-          - Budget planning
+          - 💰 Transaction tracking (income & expenses with tax categorization)
+          - 🏦 Account management and reconciliation
+          - 📈 Investment portfolio tracking
+          - 💳 Loan and debt management
+          - 📊 Budget planning and analysis with time frame support
+          - 🧾 Tax calculations and projections
+          
+          ### What's Included:
+          - Standalone executable (no Python installation required)
+          - All templates and static files bundled
+          - README with installation instructions
+          - SQLite database for local data storage
           
           ---
           
-          **Note**: The executable includes all dependencies and templates. No Python installation required!
+          **Note**: Your financial data stays on your computer - no cloud sync or internet connection required!
         files: |
-          flask-finance-linux-x64/flask-finance-linux
-          flask-finance-windows-x64.exe/flask-finance-windows.exe
-          flask-finance-macos-x64/flask-finance-macos
+          flask-finance-linux-x64/flask-finance-linux-x64.zip
+          flask-finance-windows-x64.exe/flask-finance-windows-x64.exe.zip
+          flask-finance-macos-x64/flask-finance-macos-x64.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
