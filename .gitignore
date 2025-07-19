@@ -1,2 +1,24 @@
 .venv
 /venv
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Database files
+*.db
+db/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
