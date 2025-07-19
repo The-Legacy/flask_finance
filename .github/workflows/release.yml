@@ -65,23 +65,24 @@ jobs:
 
     - name: Create executable with PyInstaller (Windows)
       if: runner.os == 'Windows'
+      shell: cmd
       run: |
-        echo "Starting PyInstaller build for ${{ matrix.artifact_name }}..."
-        pyinstaller --onefile --name ${{ matrix.artifact_name }} \
-          --add-data "templates;templates" \
-          --add-data "static;static" \
-          --hidden-import flask \
-          --hidden-import sqlalchemy \
-          --hidden-import werkzeug \
-          --hidden-import jinja2 \
-          --hidden-import models.transaction \
-          --hidden-import models.loan \
-          --hidden-import models.investment \
-          --hidden-import models.account \
-          --hidden-import models.budget \
-          --hidden-import database \
+        echo Starting PyInstaller build for ${{ matrix.artifact_name }}...
+        pyinstaller --onefile --name ${{ matrix.artifact_name }} ^
+          --add-data "templates;templates" ^
+          --add-data "static;static" ^
+          --hidden-import flask ^
+          --hidden-import sqlalchemy ^
+          --hidden-import werkzeug ^
+          --hidden-import jinja2 ^
+          --hidden-import models.transaction ^
+          --hidden-import models.loan ^
+          --hidden-import models.investment ^
+          --hidden-import models.account ^
+          --hidden-import models.budget ^
+          --hidden-import database ^
           app.py
-        echo "PyInstaller build completed"
+        echo PyInstaller build completed
         dir dist
 
     - name: Upload build artifacts
