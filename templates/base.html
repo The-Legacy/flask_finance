@@ -41,6 +41,12 @@
                             <i class="bi bi-list-ul"></i> Transactions
                         </a>
                     </li>
+                    <!-- <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'monthly_transactions' %}active{% endif %}" 
+                           href="{{ url_for('monthly_transactions') }}">
+                            <i class="bi bi-calendar-month"></i> Monthly History
+                        </a>
+                    </li> -->
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'accounts' %}active{% endif %}" 
                            href="{{ url_for('accounts') }}">

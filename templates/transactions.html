@@ -98,12 +98,14 @@
 </div>
 {% endif %}
 
-<!-- Transactions Table -->
+<!-- Current Month Transactions -->
 <div class="row">
     <div class="col-12">
         <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Transaction History</h5>
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-calendar-check"></i> Current Month Transactions
+                </h5>
             </div>
             <div class="card-body">
                 {% if transactions %}
@@ -161,13 +163,10 @@
                             </tbody>
                         </table>
                     </div>
-                    
-                    <!-- Pagination would go here in a full implementation -->
-                    
                 {% else %}
                     <div class="text-center py-5">
                         <i class="bi bi-inbox display-1 text-muted"></i>
-                        <h4 class="text-muted mt-3">No transactions found</h4>
+                        <h4 class="text-muted mt-3">No transactions this month</h4>
                         <p class="text-muted">Add your first transaction to get started!</p>
                         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addTransactionModal">
                             <i class="bi bi-plus-circle"></i> Add Transaction
@@ -178,6 +177,191 @@
         </div>
     </div>
 </div>
+
+<!-- Past Transactions by Month -->
+{% if past_transactions_by_month %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-archive"></i> Past Transaction History
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for month_data in past_transactions_by_month %}
+                    {% set month_name = month_names[month_data.month - 1] %}
+                    {% set year = month_data.year|int %}
+                    {% set month = month_data.month|int %}
+                    
+                    <div class="col-lg-4 col-md-6 mb-3">
+                        <div class="card h-100 {% if selected_year == year and selected_month == month %}border-primary{% endif %}">
+                            <div class="card-header {% if selected_year == year and selected_month == month %}bg-primary text-white{% else %}bg-light{% endif %}">
+                                <h6 class="card-title mb-0">
+                                    <i class="bi bi-calendar-month"></i> 
+                                    {{ month_name }} {{ year }}
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-12 mb-2">
+                                        <small class="text-muted">{{ month_data.count }} transactions</small>
+                                    </div>
+                                </div>
+                                <div class="row text-center">
+                                    <div class="col-6 mb-2">
+                                        <h6 class="text-success mb-1">Income</h6>
+                                        <p class="mb-0">${{ "{:,.2f}".format(month_data.total_income or 0) }}</p>
+                                        <small class="text-muted">
+                                            Taxable: ${{ "{:,.2f}".format(month_data.taxable_income or 0) }}
+                                        </small>
+                                    </div>
+                                    <div class="col-6 mb-2">
+                                        <h6 class="text-danger mb-1">Expenses</h6>
+                                        <p class="mb-0">${{ "{:,.2f}".format(month_data.total_expenses or 0) }}</p>
+                                    </div>
+                                </div>
+                                <div class="row text-center mt-2">
+                                    <div class="col-12">
+                                        <h6 class="{% if (month_data.total_income or 0) - (month_data.total_expenses or 0) >= 0 %}text-info{% else %}text-warning{% endif %} mb-1">
+                                            Net Balance
+                                        </h6>
+                                        <p class="mb-0">
+                                            ${{ "{:,.2f}".format((month_data.total_income or 0) - (month_data.total_expenses or 0)) }}
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div class="text-center mt-3">
+                                    <a href="{{ url_for('transactions', year=year, month=month) }}" 
+                                       class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-eye"></i> View Details
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    
+                    {% if not past_transactions_by_month %}
+                    <div class="col-12">
+                        <div class="text-center py-5">
+                            <i class="bi bi-calendar-x display-1 text-muted"></i>
+                            <h4 class="text-muted mt-3">No past transaction history found</h4>
+                            <p class="text-muted">Transaction history will appear here as months pass!</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Selected Month Details -->
+{% if selected_transactions %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-list-ul"></i> 
+                        {{ month_names[selected_month - 1] }} {{ selected_year }} - Detailed Transactions
+                    </h5>
+                    <a href="{{ url_for('transactions') }}" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-arrow-left"></i> Back to Overview
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Month Summary -->
+                {% set month_income = selected_transactions|selectattr('transaction_type', 'equalto', 'income')|map(attribute='amount')|sum %}
+                {% set month_taxable_income = selected_transactions|selectattr('transaction_type', 'equalto', 'income')|selectattr('is_taxable', 'equalto', true)|map(attribute='amount')|sum %}
+                {% set month_expenses = selected_transactions|selectattr('transaction_type', 'equalto', 'expense')|map(attribute='amount')|sum %}
+                
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-2">
+                        <div class="text-center p-3 bg-success text-white rounded">
+                            <h6>Total Income</h6>
+                            <h5>${{ "{:,.2f}".format(month_income) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <div class="text-center p-3 bg-info text-white rounded">
+                            <h6>Taxable Income</h6>
+                            <h5>${{ "{:,.2f}".format(month_taxable_income) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <div class="text-center p-3 bg-danger text-white rounded">
+                            <h6>Total Expenses</h6>
+                            <h5>${{ "{:,.2f}".format(month_expenses) }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <div class="text-center p-3 {% if month_income - month_expenses >= 0 %}bg-primary{% else %}bg-warning{% endif %} text-white rounded">
+                            <h6>Net Balance</h6>
+                            <h5>${{ "{:,.2f}".format(month_income - month_expenses) }}</h5>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Transactions Table -->
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th>Account</th>
+                                <th>Type</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in selected_transactions %}
+                            <tr>
+                                <td>{{ transaction.date.strftime('%m/%d/%Y') }}</td>
+                                <td>{{ transaction.description or '-' }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ transaction.category }}</span>
+                                </td>
+                                <td>
+                                    {% if transaction.account %}
+                                        <span class="badge bg-info">{{ transaction.account.name }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge {% if transaction.transaction_type == 'income' %}bg-success{% else %}bg-danger{% endif %}">
+                                        {{ transaction.transaction_type.title() }}
+                                    </span>
+                                    {% if transaction.transaction_type == 'income' %}
+                                        {% if transaction.is_taxable %}
+                                            <small class="text-muted ms-1" title="Taxable income">💰</small>
+                                        {% else %}
+                                            <small class="text-warning ms-1" title="Non-taxable income (gift, refund, etc.)">🎁</small>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td class="text-end {% if transaction.transaction_type == 'income' %}text-success{% else %}text-danger{% endif %}">
+                                    {% if transaction.transaction_type == 'income' %}+{% else %}-{% endif %}${{ "%.2f"|format(transaction.amount) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Add Transaction Modal -->
 <div class="modal fade" id="addTransactionModal" tabindex="-1">

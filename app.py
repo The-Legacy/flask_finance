@@ -45,45 +45,86 @@ def index():
 
 @app.route('/dashboard')
 def dashboard():
-    # Get summary data
-    transactions = Transaction.query.all()
+    # Get time frame parameters
+    time_frame = request.args.get('time_frame', 'current_month')  # current_month, last_month, last_3_months, last_6_months, year_to_date, custom
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    # Calculate date ranges based on time frame
+    from datetime import datetime, timedelta
+    today = datetime.now()
+    
+    if time_frame == 'current_month':
+        period_start = today.replace(day=1).date()
+        period_end = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        period_end = period_end.date()
+        period_name = "This Month"
+    elif time_frame == 'last_month':
+        first_of_current = today.replace(day=1)
+        first_of_last = (first_of_current - timedelta(days=1)).replace(day=1)
+        period_start = first_of_last.date()
+        period_end = (first_of_current - timedelta(days=1)).date()
+        period_name = "Last Month"
+    elif time_frame == 'last_3_months':
+        period_end = today.date()
+        period_start = (today - timedelta(days=90)).date()
+        period_name = "Last 3 Months"
+    elif time_frame == 'last_6_months':
+        period_end = today.date()
+        period_start = (today - timedelta(days=180)).date()
+        period_name = "Last 6 Months"
+    elif time_frame == 'year_to_date':
+        period_start = today.replace(month=1, day=1).date()
+        period_end = today.date()
+        period_name = "Year to Date"
+    elif time_frame == 'custom' and start_date and end_date:
+        period_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        period_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        period_name = f"{period_start.strftime('%m/%d/%Y')} - {period_end.strftime('%m/%d/%Y')}"
+    else:
+        # Default to current month
+        period_start = today.replace(day=1).date()
+        period_end = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        period_end = period_end.date()
+        period_name = "This Month"
+        time_frame = 'current_month'
+    
+    # Get all data for net worth calculation (unchanged)
+    all_transactions = Transaction.query.all()
     loans = Loan.query.all()
     investments = Investment.query.all()
     active_budget = Budget.query.filter_by(is_active=True).first()
     
-    # Calculate monthly totals (current month)
-    from datetime import datetime, timedelta
-    current_month = datetime.now().replace(day=1)
-    next_month = (current_month + timedelta(days=32)).replace(day=1)
-    
-    # Get current month transactions
-    monthly_transactions = Transaction.query.filter(
-        Transaction.date >= current_month.date(),
-        Transaction.date < next_month.date()
+    # Get transactions for the selected period
+    period_transactions = Transaction.query.filter(
+        Transaction.date >= period_start,
+        Transaction.date <= period_end
     ).all()
     
-    monthly_income = sum(t.amount for t in monthly_transactions if t.transaction_type == 'income')
-    monthly_taxable_income = sum(t.amount for t in monthly_transactions if t.transaction_type == 'income' and t.is_taxable)
-    monthly_expenses = sum(t.amount for t in monthly_transactions if t.transaction_type == 'expense')
-    monthly_net_balance = monthly_income - monthly_expenses
+    # Calculate period totals
+    period_income = sum(t.amount for t in period_transactions if t.transaction_type == 'income')
+    period_taxable_income = sum(t.amount for t in period_transactions if t.transaction_type == 'income' and t.is_taxable)
+    period_expenses = sum(t.amount for t in period_transactions if t.transaction_type == 'expense')
+    period_net_balance = period_income - period_expenses
     
-    # Calculate tax amount for this month based on TAXABLE income only
-    monthly_tax_amount = 0
-    if active_budget and monthly_taxable_income > 0:
+    # Calculate tax amount for the period based on TAXABLE income only
+    period_tax_amount = 0
+    if active_budget and period_taxable_income > 0:
         try:
             calculator = TaxCalculator()
-            # Calculate what percentage of annual income this month's TAXABLE income represents
-            taxable_income_percentage = monthly_taxable_income / (active_budget.annual_income / 12)
-            # Apply that percentage to the monthly tax estimate
-            monthly_tax_amount = active_budget.monthly_taxes * taxable_income_percentage
+            # Calculate what percentage of annual income this period's TAXABLE income represents
+            days_in_period = (period_end - period_start).days + 1
+            annual_taxable_projection = period_taxable_income * (365 / days_in_period)
+            tax_percentage = annual_taxable_projection / active_budget.annual_income if active_budget.annual_income > 0 else 0
+            period_tax_amount = (active_budget.monthly_taxes * 12) * tax_percentage * (days_in_period / 365)
         except Exception as e:
-            print(f"Error calculating monthly tax amount: {e}")
-            monthly_tax_amount = 0
+            print(f"Error calculating period tax amount: {e}")
+            period_tax_amount = 0
     
     # Calculate all-time totals for net worth calculation
-    total_income = sum(t.amount for t in transactions if t.transaction_type == 'income')
-    total_taxable_income = sum(t.amount for t in transactions if t.transaction_type == 'income' and t.is_taxable)
-    total_expenses = sum(t.amount for t in transactions if t.transaction_type == 'expense')
+    total_income = sum(t.amount for t in all_transactions if t.transaction_type == 'income')
+    total_taxable_income = sum(t.amount for t in all_transactions if t.transaction_type == 'income' and t.is_taxable)
+    total_expenses = sum(t.amount for t in all_transactions if t.transaction_type == 'expense')
     net_balance = total_income - total_expenses
     
     # Calculate debt summary
@@ -126,17 +167,52 @@ def dashboard():
             }
         except Exception as e:
             print(f"Error calculating tax breakdown: {e}")
+    
+    # Tax cost breakdown (if budget exists, get estimated tax info)
+    tax_breakdown = None
+    if active_budget:
+        try:
+            calculator = TaxCalculator()
+            tax_info = calculator.calculate_taxes(
+                active_budget.annual_income, 
+                active_budget.employment_type, 
+                'single',  # Default filing status for now
+                active_budget.state_code, 
+                active_budget.city_code
+            )
+            tax_breakdown = {
+                'annual_income': active_budget.annual_income,
+                'monthly_taxes': active_budget.monthly_taxes,
+                'tax_details': {
+                    'federal_income': tax_info.get('federal_income_tax', 0),
+                    'federal_payroll': tax_info.get('payroll_taxes', {}).get('total_payroll', 0) if active_budget.employment_type == 'w2' else 0,
+                    'self_employment': tax_info.get('self_employment_tax', 0) if active_budget.employment_type == '1099' else 0,
+                    'state_tax': tax_info.get('state_tax_info', {}).get('state_tax', 0),
+                    'local_tax': tax_info.get('local_tax_info', {}).get('local_tax', 0),
+                    'total_annual': tax_info.get('total_tax_owed', 0)
+                },
+                'state_name': tax_info.get('state_tax_info', {}).get('state_name', 'No State Tax'),
+                'city_name': tax_info.get('local_tax_info', {}).get('city_name', 'No Local Tax'),
+                'effective_rate': tax_info.get('effective_tax_rate', 0)
+            }
+        except Exception as e:
+            print(f"Error calculating tax breakdown: {e}")
             tax_breakdown = None
 
     # Budget vs Actual Analysis
     budget_analysis = None
     if active_budget:
-        # Use the monthly transactions we already calculated above
-        monthly_expense_transactions = [t for t in monthly_transactions if t.transaction_type == 'expense']
+        # Use the period transactions for budget analysis
+        period_expense_transactions = [t for t in period_transactions if t.transaction_type == 'expense']
+        
+        # Calculate budget scaling factor based on time period
+        days_in_period = (period_end - period_start).days + 1
+        days_in_month = 30.44  # Average days per month (365.25 / 12)
+        budget_scaling_factor = days_in_period / days_in_month
         
         # Calculate actual spending by category
         actual_spending = {}
-        for transaction in monthly_expense_transactions:
+        for transaction in period_expense_transactions:
             category = transaction.category
             if category not in actual_spending:
                 actual_spending[category] = 0
@@ -199,7 +275,9 @@ def dashboard():
         mapped_categories = set()
         budget_vs_actual = {}
         for budget_category, expense_categories in category_mapping.items():
-            budget_amount = active_budget.get_allocation_by_category(budget_category)
+            # Scale the budget amount proportionally to the time period
+            monthly_budget_amount = active_budget.get_allocation_by_category(budget_category)
+            scaled_budget_amount = monthly_budget_amount * budget_scaling_factor
             actual_amount = 0
             
             # Check for exact matches (case-insensitive)
@@ -216,10 +294,11 @@ def dashboard():
                         break  # Don't double-count if multiple matches
             
             budget_vs_actual[budget_category] = {
-                'budget': budget_amount,
+                'budget': scaled_budget_amount,
+                'monthly_budget': monthly_budget_amount,  # Keep original for reference
                 'actual': actual_amount,
-                'remaining': budget_amount - actual_amount,
-                'percentage_used': (actual_amount / budget_amount * 100) if budget_amount > 0 else 0
+                'remaining': scaled_budget_amount - actual_amount,
+                'percentage_used': (actual_amount / scaled_budget_amount * 100) if scaled_budget_amount > 0 else 0
             }
         
         # Find unmapped spending (categories that don't fit into budget categories)
@@ -233,23 +312,38 @@ def dashboard():
         budget_analysis = {
             'active_budget': active_budget,
             'budget_vs_actual': budget_vs_actual,
-            'total_budgeted': active_budget.get_total_allocated(),
+            'total_budgeted': active_budget.get_total_allocated() * budget_scaling_factor,
+            'monthly_total_budgeted': active_budget.get_total_allocated(),  # Keep original for reference
             'total_spent': sum(actual_spending.values()),
-            'budget_remaining': active_budget.get_total_allocated() - sum(actual_spending.values()),
+            'budget_remaining': (active_budget.get_total_allocated() * budget_scaling_factor) - sum(actual_spending.values()),
             'unmapped_spending': unmapped_spending,
-            'total_unmapped': total_unmapped
+            'total_unmapped': total_unmapped,
+            'budget_scaling_factor': budget_scaling_factor,
+            'days_in_period': days_in_period,
+            'period_name': period_name  # Add period name for display
         }
     
     # Get active accounts for transaction form
     accounts = Account.query.filter_by(is_active=True).order_by(Account.name).all()
     
+    # Get transactions for the selected period (for display in the dashboard)
+    period_transactions_display = Transaction.query.filter(
+        Transaction.date >= period_start,
+        Transaction.date <= period_end
+    ).order_by(Transaction.date.desc()).all()
+    
     return render_template('dashboard.html',
-                         # Monthly stats (for top summary cards)
-                         monthly_income=monthly_income,
-                         monthly_taxable_income=monthly_taxable_income,
-                         monthly_expenses=monthly_expenses,
-                         monthly_net_balance=monthly_net_balance,
-                         monthly_tax_amount=monthly_tax_amount,
+                         # Period stats (for top summary cards) - updated variable names
+                         monthly_income=period_income,
+                         monthly_taxable_income=period_taxable_income,
+                         monthly_expenses=period_expenses,
+                         monthly_net_balance=period_net_balance,
+                         monthly_tax_amount=period_tax_amount,
+                         # Time frame information
+                         time_frame=time_frame,
+                         period_name=period_name,
+                         period_start=period_start,
+                         period_end=period_end,
                          # All-time stats (for net worth calculation)
                          total_income=total_income,
                          total_taxable_income=total_taxable_income,
@@ -260,7 +354,7 @@ def dashboard():
                          current_portfolio_value=current_portfolio_value,
                          portfolio_gain_loss=portfolio_gain_loss,
                          net_worth=net_worth,
-                         transactions=transactions[:10],  # Recent transactions
+                         transactions=period_transactions_display,  # Transactions for selected period
                          loans=loans,
                          investments=investments,
                          accounts=accounts,
@@ -276,19 +370,75 @@ def transactions():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
     
-    # Build query
-    query = Transaction.query
+    # Get current month transactions (recent transactions)
+    from datetime import datetime, timedelta
+    from sqlalchemy import extract, func
     
+    today = datetime.now()
+    current_month_start = today.replace(day=1).date()
+    next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+    current_month_end = (next_month - timedelta(days=1)).date()
+    
+    # Build query for current month recent transactions
+    recent_query = Transaction.query.filter(
+        Transaction.date >= current_month_start,
+        Transaction.date <= current_month_end
+    )
+    
+    # Apply filters to recent transactions
     if category_filter:
-        query = query.filter(Transaction.category.ilike(f'%{category_filter}%'))
+        recent_query = recent_query.filter(Transaction.category.ilike(f'%{category_filter}%'))
     if type_filter:
-        query = query.filter(Transaction.transaction_type == type_filter)
+        recent_query = recent_query.filter(Transaction.transaction_type == type_filter)
     if start_date:
-        query = query.filter(Transaction.date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        recent_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if recent_start >= current_month_start:
+            recent_query = recent_query.filter(Transaction.date >= recent_start)
     if end_date:
-        query = query.filter(Transaction.date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+        recent_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        if recent_end <= current_month_end:
+            recent_query = recent_query.filter(Transaction.date <= recent_end)
     
-    transactions = query.order_by(Transaction.date.desc()).all()
+    recent_transactions = recent_query.order_by(Transaction.date.desc()).all()
+    
+    # Get past transactions grouped by month and year (excluding current month)
+    # Disable monthly history for now
+    past_transactions_by_month = []
+    # past_transactions_by_month = db.session.query(
+    #     extract('year', Transaction.date).label('year'),
+    #     extract('month', Transaction.date).label('month'),
+    #     func.count(Transaction.id).label('count'),
+    #     func.sum(func.case((Transaction.transaction_type == 'income', Transaction.amount), else=0)).label('total_income'),
+    #     func.sum(func.case((Transaction.transaction_type == 'income', func.case((Transaction.is_taxable == True, Transaction.amount), else=0)), else=0)).label('taxable_income'),
+    #     func.sum(func.case((Transaction.transaction_type == 'expense', Transaction.amount), else=0)).label('total_expenses')
+    # ).filter(
+    #     Transaction.date < current_month_start  # Only past months
+    # ).group_by(
+    #     extract('year', Transaction.date),
+    #     extract('month', Transaction.date)
+    # ).order_by(
+    #     extract('year', Transaction.date).desc(),
+    #     extract('month', Transaction.date).desc()
+    # ).all()
+    
+    # Get selected month details if requested
+    selected_year = request.args.get('year', type=int)
+    selected_month = request.args.get('month', type=int)
+    selected_transactions = []
+    
+    if selected_year and selected_month:
+        selected_query = Transaction.query.filter(
+            extract('year', Transaction.date) == selected_year,
+            extract('month', Transaction.date) == selected_month
+        )
+        
+        # Apply filters to selected month transactions
+        if category_filter:
+            selected_query = selected_query.filter(Transaction.category.ilike(f'%{category_filter}%'))
+        if type_filter:
+            selected_query = selected_query.filter(Transaction.transaction_type == type_filter)
+        
+        selected_transactions = selected_query.order_by(Transaction.date.desc()).all()
     
     # Get unique categories for filter dropdown
     categories = db.session.query(Transaction.category).distinct().all()
@@ -297,8 +447,19 @@ def transactions():
     # Get active accounts for transaction form
     accounts = Account.query.filter_by(is_active=True).order_by(Account.name).all()
     
+    # Get month names for display
+    month_names = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ]
+    
     return render_template('transactions.html', 
-                         transactions=transactions, 
+                         transactions=recent_transactions,  # Current month recent transactions
+                         past_transactions_by_month=past_transactions_by_month,
+                         selected_transactions=selected_transactions,
+                         selected_year=selected_year,
+                         selected_month=selected_month,
+                         month_names=month_names,
                          categories=categories,
                          accounts=accounts,
                          current_filters={
@@ -919,6 +1080,13 @@ def delete_account(account_id):
     
     return redirect(url_for('accounts'))
 
+@app.route('/monthly_transactions')
+def monthly_transactions():
+    """Show transactions organized by month and year - DISABLED"""
+    # This feature has been disabled as requested
+    flash('Monthly transactions feature is currently disabled.', 'info')
+    return redirect(url_for('transactions'))
+
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True)
+    app.run(debug=True, port=8001)
