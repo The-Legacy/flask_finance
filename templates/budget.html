@@ -1,0 +1,508 @@
+{% extends "base.html" %}
+
+{% block title %}Budget Planner - Personal Finance Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4"><i class="bi bi-pie-chart"></i> Budget Planner & Expense Allocator</h1>
+    </div>
+</div>
+
+<!-- Budget Planning Form -->
+<div class="row mb-4">
+    <div class="col-lg-10 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Create Your Monthly Budget Plan</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('calculate_budget') }}" method="POST">
+                    <!-- Income and Tax Information -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3"><i class="bi bi-cash-stack"></i> Income Information</h6>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Annual Income *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" name="annual_income" 
+                                           step="0.01" min="0" required 
+                                           value="{% if annual_income %}{{ annual_income }}{% endif %}"
+                                           placeholder="e.g., 75000">
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Employment Type *</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="employment_type" 
+                                           value="w2" id="budget_w2" {% if employment_type == 'w2' %}checked{% endif %} required>
+                                    <label class="form-check-label" for="budget_w2">W-2 Employee</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="employment_type" 
+                                           value="1099" id="budget_1099" {% if employment_type == '1099' %}checked{% endif %} required>
+                                    <label class="form-check-label" for="budget_1099">1099 Contractor/Self-Employed</label>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Filing Status</label>
+                                <select class="form-select" name="filing_status">
+                                    <option value="single" {% if filing_status == 'single' or not filing_status %}selected{% endif %}>Single</option>
+                                    <option value="married_jointly" {% if filing_status == 'married_jointly' %}selected{% endif %}>Married Filing Jointly</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3"><i class="bi bi-geo-alt"></i> Location (For Tax Calculation)</h6>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">State (Optional)</label>
+                                <select class="form-select" name="state_code" id="budget_state_code">
+                                    <option value="">Select State</option>
+                                    {% if states %}
+                                        {% for state in states %}
+                                        <option value="{{ state.code }}" {% if selected_state == state.code %}selected{% endif %}>
+                                            {{ state.name }}
+                                        </option>
+                                        {% endfor %}
+                                    {% endif %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">City (Optional)</label>
+                                <select class="form-select" name="city_code" id="budget_city_code">
+                                    <option value="">Select City</option>
+                                    {% if cities %}
+                                        {% for city in cities %}
+                                        <option value="{{ city.code }}" {% if selected_city == city.code %}selected{% endif %}>
+                                            {{ city.name }}
+                                        </option>
+                                        {% endfor %}
+                                    {% endif %}
+                                </select>
+                            </div>
+                            
+                            {% if total_monthly_debt > 0 %}
+                            <div class="alert alert-info">
+                                <h6><i class="bi bi-info-circle"></i> Existing Debt Payments</h6>
+                                <p class="mb-1">Current monthly debt payments: <strong>${{ "{:,.2f}".format(total_monthly_debt) }}</strong></p>
+                                <small>This will be automatically deducted from your available budget.</small>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <!-- Budget Allocation Percentages -->
+                    <div class="mb-4">
+                        <h6 class="text-primary mb-3"><i class="bi bi-sliders"></i> Budget Allocation (Percentages)</h6>
+                        <p class="text-muted">Adjust the percentage of your after-tax, after-debt income to allocate to each category:</p>
+                        
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Housing</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="housing_percent" 
+                                           min="0" max="100" step="1" value="30" data-category="housing">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Rent/mortgage, insurance</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Transportation</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="transportation_percent" 
+                                           min="0" max="100" step="1" value="15" data-category="transportation">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Car payment, gas, transit</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Food</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="food_percent" 
+                                           min="0" max="100" step="1" value="12" data-category="food">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Groceries, dining out</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Utilities</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="utilities_percent" 
+                                           min="0" max="100" step="1" value="8" data-category="utilities">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Electric, water, internet</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Healthcare</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="healthcare_percent" 
+                                           min="0" max="100" step="1" value="5" data-category="healthcare">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Insurance, medical</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Entertainment</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="entertainment_percent" 
+                                           min="0" max="100" step="1" value="5" data-category="entertainment">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Movies, hobbies, fun</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Savings</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="savings_percent" 
+                                           min="0" max="100" step="1" value="20" data-category="savings">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Emergency fund, retirement</small>
+                            </div>
+                            
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Other</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control budget-percent" name="other_percent" 
+                                           min="0" max="100" step="1" value="5" data-category="other">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted">Miscellaneous expenses</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <div class="alert alert-warning d-none" id="percentage-warning">
+                                <i class="bi bi-exclamation-triangle"></i> Total percentage is <span id="total-percent">100</span>%. 
+                                Please adjust your allocations so they total 100%.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success btn-lg w-100">
+                        <i class="bi bi-calculator"></i> Create My Budget Plan
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Budget Results -->
+{% if budget_result %}
+<div class="row">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-check-circle"></i> Your Personalized Monthly Budget Plan
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Income Summary -->
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h6>Monthly Gross</h6>
+                                <h4>${{ "{:,.2f}".format(budget_result.monthly_gross) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h6>Monthly Taxes</h6>
+                                <h4>${{ "{:,.2f}".format(budget_result.monthly_taxes) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body text-center">
+                                <h6>Monthly Debt</h6>
+                                <h4>${{ "{:,.2f}".format(budget_result.monthly_debt) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h6>Available to Budget</h6>
+                                <h4>${{ "{:,.2f}".format(budget_result.available_for_budget) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Budget Breakdown -->
+                <div class="row">
+                    <div class="col-md-8">
+                        <h5>Monthly Budget Allocation</h5>
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>Percentage</th>
+                                        <th>Monthly Amount</th>
+                                        <th>Annual Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><i class="bi bi-house"></i> Housing</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.housing) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.housing) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.housing * 12) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><i class="bi bi-car-front"></i> Transportation</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.transportation) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.transportation) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.transportation * 12) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><i class="bi bi-basket"></i> Food</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.food) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.food) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.food * 12) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><i class="bi bi-lightning"></i> Utilities</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.utilities) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.utilities) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.utilities * 12) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><i class="bi bi-heart-pulse"></i> Healthcare</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.healthcare) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.healthcare) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.healthcare * 12) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><i class="bi bi-controller"></i> Entertainment</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.entertainment) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.entertainment) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.entertainment * 12) }}</td>
+                                    </tr>
+                                    <tr class="table-success">
+                                        <td><i class="bi bi-piggy-bank"></i> <strong>Savings</strong></td>
+                                        <td><strong>{{ "%.1f"|format(budget_result.percentages.savings) }}%</strong></td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.savings) }}</td>
+                                        <td><strong>${{ "{:,.2f}".format(budget_result.budget_breakdown.savings * 12) }}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td><i class="bi bi-three-dots"></i> Other</td>
+                                        <td>{{ "%.1f"|format(budget_result.percentages.other) }}%</td>
+                                        <td class="fw-bold">${{ "{:,.2f}".format(budget_result.budget_breakdown.other) }}</td>
+                                        <td>${{ "{:,.2f}".format(budget_result.budget_breakdown.other * 12) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <h5>Budget Insights</h5>
+                        
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-lightbulb"></i> Savings Goal</h6>
+                            <p class="mb-1">Monthly Savings: <strong>${{ "{:,.2f}".format(budget_result.budget_breakdown.savings) }}</strong></p>
+                            <p class="mb-0">Annual Savings: <strong>${{ "{:,.2f}".format(budget_result.budget_breakdown.savings * 12) }}</strong></p>
+                        </div>
+                        
+                        {% if budget_result.monthly_debt > 0 %}
+                        <div class="alert alert-warning">
+                            <h6><i class="bi bi-exclamation-triangle"></i> Debt Overview</h6>
+                            <p class="mb-1">Monthly debt payments: <strong>${{ "{:,.2f}".format(budget_result.monthly_debt) }}</strong></p>
+                            <p class="mb-0">That's {{ "%.1f"|format((budget_result.monthly_debt / budget_result.monthly_net) * 100) }}% of your take-home pay.</p>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="alert alert-success">
+                            <h6><i class="bi bi-check-circle"></i> Financial Health</h6>
+                            <ul class="mb-0">
+                                <li>Take-home pay: ${{ "{:,.2f}".format(budget_result.monthly_net) }}</li>
+                                <li>Savings rate: {{ "%.1f"|format(budget_result.percentages.savings) }}%</li>
+                                {% if budget_result.percentages.savings >= 20 %}
+                                <li class="text-success">✓ Excellent savings rate!</li>
+                                {% elif budget_result.percentages.savings >= 10 %}
+                                <li class="text-warning">Good savings rate</li>
+                                {% else %}
+                                <li class="text-danger">Consider increasing savings</li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Save Budget Plan -->
+                <div class="text-center mt-4">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title"><i class="bi bi-save"></i> Save This Budget Plan</h6>
+                            <p class="text-muted">Save this budget as your active financial plan and track spending against it on your dashboard.</p>
+                            
+                            <form action="{{ url_for('save_budget') }}" method="POST" class="d-inline">
+                                <!-- Hidden fields with budget data -->
+                                <input type="hidden" name="annual_income" value="{{ budget_result.annual_income }}">
+                                <input type="hidden" name="employment_type" value="{{ employment_type }}">
+                                <input type="hidden" name="state_code" value="{{ selected_state or '' }}">
+                                <input type="hidden" name="city_code" value="{{ selected_city or '' }}">
+                                
+                                <!-- Monthly amounts -->
+                                <input type="hidden" name="housing" value="{{ budget_result.budget_breakdown.housing }}">
+                                <input type="hidden" name="food" value="{{ budget_result.budget_breakdown.food }}">
+                                <input type="hidden" name="transportation" value="{{ budget_result.budget_breakdown.transportation }}">
+                                <input type="hidden" name="utilities" value="{{ budget_result.budget_breakdown.utilities }}">
+                                <input type="hidden" name="healthcare" value="{{ budget_result.budget_breakdown.healthcare }}">
+                                <input type="hidden" name="insurance" value="0">
+                                <input type="hidden" name="entertainment" value="{{ budget_result.budget_breakdown.entertainment }}">
+                                <input type="hidden" name="personal_care" value="0">
+                                <input type="hidden" name="shopping" value="0">
+                                <input type="hidden" name="education" value="0">
+                                <input type="hidden" name="savings" value="{{ budget_result.budget_breakdown.savings }}">
+                                <input type="hidden" name="emergency_fund" value="0">
+                                <input type="hidden" name="retirement" value="0">
+                                <input type="hidden" name="other" value="{{ budget_result.budget_breakdown.other }}">
+                                
+                                <!-- Calculated fields -->
+                                <input type="hidden" name="monthly_take_home" value="{{ budget_result.monthly_net }}">
+                                <input type="hidden" name="monthly_taxes" value="{{ budget_result.monthly_taxes }}">
+                                <input type="hidden" name="monthly_loan_payments" value="{{ budget_result.monthly_debt }}">
+                                <input type="hidden" name="monthly_available" value="{{ budget_result.available_for_budget }}">
+                                
+                                <div class="row align-items-center">
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control" name="budget_name" 
+                                               placeholder="Enter budget plan name (e.g., 2025 Budget Plan)" 
+                                               value="{{ budget_result.annual_income|int }} Budget Plan" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-success w-100">
+                                            <i class="bi bi-save"></i> Save Budget Plan
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle state selection for budget form
+document.getElementById('budget_state_code').addEventListener('change', function() {
+    const stateCode = this.value;
+    const citySelect = document.getElementById('budget_city_code');
+    
+    // Clear existing options
+    citySelect.innerHTML = '<option value="">Select City</option>';
+    
+    if (stateCode) {
+        // Fetch cities for the selected state
+        fetch(`/api/cities/${stateCode}`)
+            .then(response => response.json())
+            .then(cities => {
+                cities.forEach(city => {
+                    const option = document.createElement('option');
+                    option.value = city.code;
+                    option.textContent = city.name;
+                    citySelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching cities:', error);
+            });
+    }
+});
+
+// Real-time percentage calculation
+function updatePercentageTotal() {
+    const percentInputs = document.querySelectorAll('.budget-percent');
+    let total = 0;
+    
+    percentInputs.forEach(input => {
+        total += parseFloat(input.value) || 0;
+    });
+    
+    const totalSpan = document.getElementById('total-percent');
+    const warning = document.getElementById('percentage-warning');
+    
+    totalSpan.textContent = total.toFixed(0);
+    
+    if (total !== 100) {
+        warning.classList.remove('d-none');
+        if (total > 100) {
+            warning.className = 'alert alert-danger';
+        } else {
+            warning.className = 'alert alert-warning';
+        }
+    } else {
+        warning.classList.add('d-none');
+    }
+}
+
+// Add event listeners to all percentage inputs
+document.querySelectorAll('.budget-percent').forEach(input => {
+    input.addEventListener('input', updatePercentageTotal);
+});
+
+// Initialize percentage total
+updatePercentageTotal();
+
+// Preset budget templates
+function applyBudgetTemplate(template) {
+    const templates = {
+        conservative: {
+            housing: 25, transportation: 10, food: 10, utilities: 8,
+            healthcare: 5, entertainment: 2, savings: 35, other: 5
+        },
+        balanced: {
+            housing: 30, transportation: 15, food: 12, utilities: 8,
+            healthcare: 5, entertainment: 5, savings: 20, other: 5
+        },
+        lifestyle: {
+            housing: 35, transportation: 18, food: 15, utilities: 8,
+            healthcare: 5, entertainment: 10, savings: 7, other: 2
+        }
+    };
+    
+    const preset = templates[template];
+    if (preset) {
+        Object.keys(preset).forEach(category => {
+            const input = document.querySelector(`input[name="${category}_percent"]`);
+            if (input) {
+                input.value = preset[category];
+            }
+        });
+        updatePercentageTotal();
+    }
+}
+
+// Add preset buttons (can be added to template if desired)
+</script>
+{% endblock %}

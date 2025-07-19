@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+
+{% block title %}Investments - Personal Finance Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="bi bi-graph-up"></i> Investment Portfolio</h1>
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addInvestmentModal">
+                <i class="bi bi-plus-circle"></i> Add Investment
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Portfolio Summary -->
+{% if investments %}
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h6>Total Invested</h6>
+                {% set total_invested = 0 %}
+                {% for investment in investments %}
+                    {% set total_invested = total_invested + investment.total_cost() %}
+                {% endfor %}
+                <h3>${{ "%.2f"|format(total_invested) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h6>Current Value</h6>
+                <h3>${{ "%.2f"|format(investments|map(attribute='current_value')|sum) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        {% set total_gain_loss = investments|map(attribute='gain_loss')|sum %}
+        <div class="card {% if total_gain_loss >= 0 %}bg-success{% else %}bg-danger{% endif %} text-white">
+            <div class="card-body text-center">
+                <h6>Total Gain/Loss</h6>
+                <h3>{% if total_gain_loss >= 0 %}+{% endif %} ${{ "%.2f"|format(total_gain_loss) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        {% set total_invested = 0 %}
+        {% set total_current_value = 0 %}
+        {% for investment in investments %}
+            {% set total_invested = total_invested + investment.total_cost() %}
+            {% set total_current_value = total_current_value + investment.current_value() %}
+        {% endfor %}
+        {% set gain_loss_percent = ((total_current_value - total_invested) / total_invested * 100) if total_invested > 0 else 0 %}
+        <div class="card {% if gain_loss_percent >= 0 %}bg-success{% else %}bg-danger{% endif %} text-white">
+            <div class="card-body text-center">
+                <h6>Total Return</h6>
+                <h3>{% if gain_loss_percent >= 0 %}+{% endif %}{{ "%.2f"|format(gain_loss_percent) }}%</h3>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Investment Holdings -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Your Holdings</h5>
+            </div>
+            <div class="card-body">
+                {% if investments %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th class="text-end">Shares</th>
+                                    <th class="text-end">Cost Basis</th>
+                                    <th class="text-end">Current Price</th>
+                                    <th class="text-end">Total Cost</th>
+                                    <th class="text-end">Current Value</th>
+                                    <th class="text-end">Gain/Loss</th>
+                                    <th class="text-end">Return %</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for investment in investments %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ investment.symbol }}</strong>
+                                    </td>
+                                    <td>{{ investment.name }}</td>
+                                    <td>
+                                        <span class="badge 
+                                            {% if investment.investment_type == 'stock' %}bg-primary
+                                            {% elif investment.investment_type == 'etf' %}bg-info
+                                            {% elif investment.investment_type == 'crypto' %}bg-warning
+                                            {% elif investment.investment_type == 'bond' %}bg-secondary
+                                            {% else %}bg-dark{% endif %}">
+                                            {{ investment.investment_type.upper() }}
+                                        </span>
+                                    </td>
+                                    <td class="text-end">{{ "%.4f"|format(investment.shares) }}</td>
+                                    <td class="text-end">${{ "%.2f"|format(investment.cost_basis) }}</td>
+                                    <td class="text-end">${{ "%.2f"|format(investment.current_price) }}</td>
+                                    <td class="text-end">${{ "%.2f"|format(investment.total_cost()) }}</td>
+                                    <td class="text-end">${{ "%.2f"|format(investment.current_value()) }}</td>
+                                    <td class="text-end {% if investment.gain_loss() >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                        {% if investment.gain_loss() >= 0 %}+{% endif %} ${{ "%.2f"|format(investment.gain_loss()) }}
+                                    </td>
+                                    <td class="text-end {% if investment.gain_loss_percentage() >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                        {% if investment.gain_loss_percentage() >= 0 %}+{% endif %}{{ "%.2f"|format(investment.gain_loss_percentage()) }}%
+                                    </td>
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                <i class="bi bi-three-dots-vertical"></i>
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                <li><a class="dropdown-item" href="#" data-investment-id="{{ investment.id }}" onclick="updatePrice('{{ investment.id }}')">
+                                                    <i class="bi bi-arrow-clockwise"></i> Update Price
+                                                </a></li>
+                                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil"></i> Edit</a></li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li><a class="dropdown-item text-danger" href="#" onclick="deleteInvestment('{{ investment.id }}')"><i class="bi bi-trash"></i> Remove</a></li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-graph-up display-1 text-muted"></i>
+                        <h4 class="text-muted mt-3">No investments tracked</h4>
+                        <p class="text-muted">Start building your portfolio by adding your first investment.</p>
+                        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addInvestmentModal">
+                            <i class="bi bi-plus-circle"></i> Add Your First Investment
+                        </button>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Portfolio Allocation Chart -->
+{% if investments %}
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Portfolio Allocation by Type</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="allocationChart" width="400" height="400"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Performance Metrics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6 mb-3">
+                        <h6 class="text-muted">Best Performer</h6>
+                        {% set best = investments|sort(attribute='gain_loss_percentage', reverse=true)|first %}
+                        <h5 class="text-success">{{ best.symbol }}</h5>
+                        <small>+{{ "%.2f"|format(best.gain_loss_percentage()) }}%</small>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <h6 class="text-muted">Worst Performer</h6>
+                        {% set worst = investments|sort(attribute='gain_loss_percentage')|first %}
+                        <h5 class="text-danger">{{ worst.symbol }}</h5>
+                        <small>{{ "%.2f"|format(worst.gain_loss_percentage()) }}%</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="row text-center">
+                    <div class="col-12">
+                        <h6 class="text-muted">Portfolio Diversity</h6>
+                        <p class="text-muted">{{ investments|groupby('investment_type')|list|length }} asset types, {{ investments|length }} holdings</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Add Investment Modal -->
+<div class="modal fade" id="addInvestmentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Investment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('add_investment') }}" method="POST">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Symbol/Ticker *</label>
+                            <input type="text" class="form-control" name="symbol" required 
+                                   placeholder="e.g., AAPL, TSLA, SPY" style="text-transform: uppercase;">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Investment Type *</label>
+                            <select class="form-select" name="investment_type" required>
+                                <option value="">Choose type...</option>
+                                <option value="stock">📈 Individual Stock</option>
+                                <option value="etf">📊 ETF</option>
+                                <option value="mutual_fund">🏛️ Mutual Fund</option>
+                                <option value="crypto">₿ Cryptocurrency</option>
+                                <option value="bond">📜 Bond</option>
+                                <option value="reit">🏢 REIT</option>
+                                <option value="other">📋 Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Investment Name *</label>
+                        <input type="text" class="form-control" name="name" required 
+                               placeholder="e.g., Apple Inc., Tesla Inc., S&P 500 ETF">
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Shares Owned *</label>
+                            <input type="number" class="form-control" name="shares" step="0.0001" min="0" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Cost Basis (per share) *</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control" name="cost_basis" step="0.01" min="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Current Price *</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control" name="current_price" step="0.01" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6>Total Investment</h6>
+                                    <h4 id="totalCost">$0.00</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6>Current Value</h6>
+                                    <h4 id="currentValue">$0.00</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Tip:</strong> The cost basis should be the average price you paid per share. 
+                        You can update the current price later to track performance.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> Add Investment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-uppercase symbol input
+document.querySelector('input[name="symbol"]').addEventListener('input', function() {
+    this.value = this.value.toUpperCase();
+});
+
+// Calculate totals in real-time
+function updateCalculations() {
+    const shares = parseFloat(document.querySelector('input[name="shares"]').value) || 0;
+    const costBasis = parseFloat(document.querySelector('input[name="cost_basis"]').value) || 0;
+    const currentPrice = parseFloat(document.querySelector('input[name="current_price"]').value) || 0;
+    
+    const totalCost = shares * costBasis;
+    const currentValue = shares * currentPrice;
+    
+    document.getElementById('totalCost').textContent = '$' + totalCost.toFixed(2);
+    document.getElementById('currentValue').textContent = '$' + currentValue.toFixed(2);
+    
+    // Update color based on gain/loss
+    const valueElement = document.getElementById('currentValue');
+    if (currentValue > totalCost) {
+        valueElement.className = 'text-success';
+    } else if (currentValue < totalCost) {
+        valueElement.className = 'text-danger';
+    } else {
+        valueElement.className = '';
+    }
+}
+
+// Add event listeners for real-time calculation
+document.querySelector('input[name="shares"]').addEventListener('input', updateCalculations);
+document.querySelector('input[name="cost_basis"]').addEventListener('input', updateCalculations);
+document.querySelector('input[name="current_price"]').addEventListener('input', updateCalculations);
+
+// Portfolio allocation chart
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if investments exist and chart element is present
+    const chartElement = document.getElementById('allocationChart');
+    if (!chartElement) return;
+    
+    // Get investment data from the page
+    const investmentRows = document.querySelectorAll('tbody tr');
+    if (investmentRows.length === 0) return;
+    
+    const typeData = {};
+    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
+    
+    // Parse data from table rows
+    investmentRows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length > 7) {
+            const type = cells[2].textContent.trim();
+            const currentValue = parseFloat(cells[7].textContent.replace('$', '').replace(',', ''));
+            
+            if (typeData[type]) {
+                typeData[type] += currentValue;
+            } else {
+                typeData[type] = currentValue;
+            }
+        }
+    });
+    
+    const labels = Object.keys(typeData);
+    const data = Object.values(typeData);
+    
+    if (labels.length > 0) {
+        const ctx = chartElement.getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, labels.length)
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+});
+
+function updatePrice(investmentId) {
+    // In a real app, this would fetch current price from an API
+    alert('Price update functionality would integrate with a financial data API like Alpha Vantage or Yahoo Finance');
+}
+
+function deleteInvestment(id) {
+    if (confirm('Are you sure you want to remove this investment from your portfolio?')) {
+        // Create a form and submit it to delete the investment
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/delete_investment/${id}`;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

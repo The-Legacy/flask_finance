@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+
+{% block title %}Tax Calculator - Personal Finance Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4"><i class="bi bi-calculator"></i> Tax Calculator & Withholding Estimator</h1>
+    </div>
+</div>
+
+<!-- Tax Calculator Form -->
+<div class="row mb-4">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Calculate Your Tax Obligations</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('calculate_taxes') }}" method="POST">
+                    <div class="mb-4">
+                        <label class="form-label">Annual Income *</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" name="annual_income" 
+                                   step="0.01" min="0" required 
+                                   value="{% if annual_income %}{{ annual_income }}{% endif %}"
+                                   placeholder="e.g., 75000">
+                        </div>
+                        <div class="form-text">Enter your total annual gross income before deductions.</div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label">Employment Type *</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="employment_type" 
+                                           value="w2" id="w2" {% if employment_type == 'w2' %}checked{% endif %} required>
+                                    <label class="form-check-label" for="w2">
+                                        <strong>W-2 Employee</strong>
+                                        <br><small class="text-muted">Traditional employee with taxes withheld by employer</small>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="employment_type" 
+                                           value="1099" id="1099" {% if employment_type == '1099' %}checked{% endif %} required>
+                                    <label class="form-check-label" for="1099">
+                                        <strong>1099 Contractor/Self-Employed</strong>
+                                        <br><small class="text-muted">Independent contractor, freelancer, or business owner</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label">Filing Status</label>
+                        <select class="form-select" name="filing_status">
+                            <option value="single" {% if filing_status == 'single' or not filing_status %}selected{% endif %}>Single</option>
+                            <option value="married_jointly" {% if filing_status == 'married_jointly' %}selected{% endif %}>Married Filing Jointly (Coming Soon)</option>
+                            <option value="married_separately" {% if filing_status == 'married_separately' %}selected{% endif %}>Married Filing Separately (Coming Soon)</option>
+                            <option value="head_of_household" {% if filing_status == 'head_of_household' %}selected{% endif %}>Head of Household (Coming Soon)</option>
+                        </select>
+                        <div class="form-text">Currently only supporting Single filer calculations.</div>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">State (Optional)</label>
+                            <select class="form-select" name="state_code" id="state_code">
+                                <option value="">Select State for State Tax Calculation</option>
+                                {% if states %}
+                                    {% for state in states %}
+                                    <option value="{{ state.code }}" {% if selected_state == state.code %}selected{% endif %}>
+                                        {{ state.name }}
+                                    </option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                            <div class="form-text">Select your state to include state income tax in calculations.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">City (Optional)</label>
+                            <select class="form-select" name="city_code" id="city_code">
+                                <option value="">Select City for Local Tax Calculation</option>
+                                {% if cities %}
+                                    {% for city in cities %}
+                                    <option value="{{ city.code }}" {% if selected_city == city.code %}selected{% endif %}>
+                                        {{ city.name }}
+                                    </option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                            <div class="form-text">Some cities have local income taxes (NYC, Philadelphia, etc.).</div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-calculator"></i> Calculate Tax Estimate
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tax Results -->
+{% if tax_info %}
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-check-circle"></i> Tax Calculation Results for {{ tax_info.employment_type.upper() }} Filer
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Summary Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h6>Annual Income</h6>
+                                <h4>${{ "{:,.2f}".format(tax_info.annual_income) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h6>Taxable Income</h6>
+                                <h4>${{ "{:,.2f}".format(tax_info.taxable_income) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h6>Total Tax Owed</h6>
+                                <h4>${{ "{:,.2f}".format(tax_info.total_tax_owed) }}</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-secondary text-white">
+                            <div class="card-body text-center">
+                                <h6>Effective Tax Rate</h6>
+                                <h4>{{ "%.2f"|format(tax_info.effective_tax_rate) }}%</h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Location Tax Summary (if applicable) -->
+                {% if (tax_info.state_tax_info and tax_info.state_tax_info.state_tax > 0) or (tax_info.local_tax_info and tax_info.local_tax_info.local_tax > 0) %}
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">Location-Based Tax Summary</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <strong>Federal Taxes:</strong> ${{ "{:,.2f}".format(tax_info.tax_breakdown.federal) }}
+                                </div>
+                                {% if tax_info.state_tax_info and tax_info.state_tax_info.state_tax > 0 %}
+                                <div class="col-md-4">
+                                    <strong>{{ tax_info.state_tax_info.state_name }} State Tax:</strong> ${{ "{:,.2f}".format(tax_info.tax_breakdown.state) }}
+                                </div>
+                                {% endif %}
+                                {% if tax_info.local_tax_info and tax_info.local_tax_info.local_tax > 0 %}
+                                <div class="col-md-4">
+                                    <strong>{{ tax_info.local_tax_info.city_name }} Local Tax:</strong> ${{ "{:,.2f}".format(tax_info.tax_breakdown.local) }}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Detailed Breakdown -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>Tax Breakdown</h5>
+                        <table class="table table-striped">
+                            <tbody>
+                                <tr>
+                                    <td>Federal Income Tax</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.federal_income_tax) }}</td>
+                                </tr>
+                                {% if tax_info.employment_type == '1099' %}
+                                <tr>
+                                    <td>Self-Employment Tax</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.self_employment_tax) }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="small text-muted">• Social Security (12.4%)</td>
+                                    <td class="text-end small text-muted">${{ "{:,.2f}".format(tax_info.se_tax_breakdown.social_security_portion) }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="small text-muted">• Medicare (2.9%)</td>
+                                    <td class="text-end small text-muted">${{ "{:,.2f}".format(tax_info.se_tax_breakdown.medicare_portion) }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td>Social Security Tax (6.2%)</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.payroll_taxes.social_security) }}</td>
+                                </tr>
+                                <tr>
+                                    <td>Medicare Tax (1.45%)</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.payroll_taxes.medicare) }}</td>
+                                </tr>
+                                {% endif %}
+                                
+                                <!-- State Tax Section -->
+                                {% if tax_info.state_tax_info and tax_info.state_tax_info.state_tax > 0 %}
+                                <tr>
+                                    <td>{{ tax_info.state_tax_info.state_name }} State Tax</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.state_tax_info.state_tax) }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="small text-muted">• Rate: {{ "%.2f"|format(tax_info.state_tax_info.state_rate * 100) }}%</td>
+                                    <td class="text-end small text-muted">Deduction: ${{ "{:,.0f}".format(tax_info.state_tax_info.state_deduction) }}</td>
+                                </tr>
+                                {% endif %}
+                                
+                                <!-- Local Tax Section -->
+                                {% if tax_info.local_tax_info and tax_info.local_tax_info.local_tax > 0 %}
+                                <tr>
+                                    <td>{{ tax_info.local_tax_info.city_name }} Local Tax</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.local_tax_info.local_tax) }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="small text-muted">• Rate: {{ "%.2f"|format(tax_info.local_tax_info.local_rate * 100) }}%</td>
+                                    <td class="text-end small text-muted">&nbsp;</td>
+                                </tr>
+                                {% endif %}
+                                
+                                <tr class="table-dark fw-bold">
+                                    <td>Total Tax Liability</td>
+                                    <td class="text-end">${{ "{:,.2f}".format(tax_info.total_tax_owed) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h5>Tax Planning Recommendations</h5>
+                        
+                        {% if tax_info.employment_type == '1099' %}
+                        <div class="alert alert-warning">
+                            <h6><i class="bi bi-exclamation-triangle"></i> Quarterly Payment Estimate</h6>
+                            <p class="mb-2">As a 1099 contractor, you should make quarterly estimated tax payments:</p>
+                            <h4 class="text-center">${{ "{:,.2f}".format(tax_info.quarterly_payment_estimate) }} per quarter</h4>
+                            <small>Due dates: Jan 15, Apr 15, Jun 15, Sep 15</small>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-lightbulb"></i> Tax-Saving Tips</h6>
+                            <ul class="mb-0">
+                                <li>Deduct business expenses (office, equipment, travel)</li>
+                                <li>Consider SEP-IRA or Solo 401(k) for retirement savings</li>
+                                <li>Track mileage for business use of personal vehicle</li>
+                                <li>Deduct health insurance premiums if self-employed</li>
+                            </ul>
+                        </div>
+                        
+                        {% else %}
+                        <div class="alert alert-success">
+                            <h6><i class="bi bi-check-circle"></i> Monthly Withholding Estimate</h6>
+                            <p class="mb-2">Your employer should withhold approximately:</p>
+                            <h4 class="text-center">${{ "{:,.2f}".format(tax_info.monthly_withholding_estimate) }} per month</h4>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-lightbulb"></i> Tax Optimization Tips</h6>
+                            <ul class="mb-0">
+                                <li>Maximize 401(k) contributions ({{ "2024 limit: $23,000" }})</li>
+                                <li>Consider Roth IRA contributions (income limits apply)</li>
+                                <li>Use HSA if available (triple tax advantage)</li>
+                                <li>Review withholding if major life changes occur</li>
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="alert alert-secondary">
+                            <h6><i class="bi bi-info-circle"></i> Tax Bracket Information</h6>
+                            <p class="mb-1">Your marginal tax rate: <strong>{{ "%.1f"|format(tax_info.marginal_tax_rate) }}%</strong></p>
+                            <small>This means your next dollar of income will be taxed at {{ "%.1f"|format(tax_info.marginal_tax_rate) }}%</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Year-End Planning -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title">Year-End Tax Planning</h6>
+                                <div class="row">
+                                    <div class="col-md-4 text-center">
+                                        <h6>Total Take-Home</h6>
+                                        <h4 class="text-success">${{ "{:,.2f}".format(tax_info.annual_income - tax_info.total_tax_owed) }}</h4>
+                                        <small class="text-muted">After federal taxes</small>
+                                    </div>
+                                    <div class="col-md-4 text-center">
+                                        <h6>Monthly Take-Home</h6>
+                                        <h4 class="text-success">${{ "{:,.2f}".format((tax_info.annual_income - tax_info.total_tax_owed) / 12) }}</h4>
+                                        <small class="text-muted">Average per month</small>
+                                    </div>
+                                    <div class="col-md-4 text-center">
+                                        <h6>Weekly Take-Home</h6>
+                                        <h4 class="text-success">${{ "{:,.2f}".format((tax_info.annual_income - tax_info.total_tax_owed) / 52) }}</h4>
+                                        <small class="text-muted">Average per week</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tax Calculator Notice -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <h6><i class="bi bi-info-circle-fill"></i> Tax Calculator Information</h6>
+            <p class="mb-0">
+                <strong>This calculator provides comprehensive tax estimates including federal, state, and local taxes.</strong> 
+                Calculations are based on 2024 tax brackets, standard deductions, and current state/local tax rates for 75+ cities. 
+                Results are estimates for planning purposes. Please consult a tax professional for personalized tax advice and filing assistance.
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-format currency input
+document.querySelector('input[name="annual_income"]').addEventListener('input', function() {
+    let value = this.value.replace(/[^\d.]/g, '');
+    if (value.includes('.')) {
+        const parts = value.split('.');
+        if (parts[1] && parts[1].length > 2) {
+            value = parts[0] + '.' + parts[1].substring(0, 2);
+        }
+    }
+    this.value = value;
+});
+
+// Show different help text based on employment type
+document.querySelectorAll('input[name="employment_type"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const incomeInput = document.querySelector('input[name="annual_income"]');
+        if (this.value === '1099') {
+            incomeInput.placeholder = 'e.g., 85000 (your net business income)';
+        } else {
+            incomeInput.placeholder = 'e.g., 75000 (your gross salary)';
+        }
+    });
+});
+
+// Handle state selection to populate cities dropdown
+document.getElementById('state_code').addEventListener('change', function() {
+    const stateCode = this.value;
+    const citySelect = document.getElementById('city_code');
+    
+    // Clear existing options
+    citySelect.innerHTML = '<option value="">Select City for Local Tax Calculation</option>';
+    
+    if (stateCode) {
+        // Fetch cities for the selected state
+        fetch(`/api/cities/${stateCode}`)
+            .then(response => response.json())
+            .then(cities => {
+                cities.forEach(city => {
+                    const option = document.createElement('option');
+                    option.value = city.code;
+                    option.textContent = city.name;
+                    citySelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching cities:', error);
+            });
+    }
+});
+
+// Show tax bracket info on hover
+function showTaxBracketInfo() {
+    // This could show a tooltip with current tax brackets
+    alert('2024 Federal Tax Brackets (Single):\n' +
+          '10%: $0 - $11,000\n' +
+          '12%: $11,000 - $44,725\n' +
+          '22%: $44,725 - $95,375\n' +
+          '24%: $95,375 - $182,050\n' +
+          '32%: $182,050 - $231,250\n' +
+          '35%: $231,250 - $578,125\n' +
+          '37%: $578,125+');
+}
+</script>
+{% endblock %}
