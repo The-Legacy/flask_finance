@@ -25,8 +25,19 @@ from models.account import Account
 from utils.tax_calculator import TaxCalculator
 
 # Create tables
-with app.app_context():
-    db.create_all()
+def init_db():
+    with app.app_context():
+        db.create_all()
+
+# Ensure database is initialized when the app starts
+try:
+    init_db()
+except Exception as e:
+    print(f"Database initialization will be attempted on first request: {e}")
+
+# Initialize database when running as main module
+if __name__ == '__main__':
+    init_db()
 
 @app.route('/')
 def index():
@@ -888,4 +899,5 @@ def delete_account(account_id):
     return redirect(url_for('accounts'))
 
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True)

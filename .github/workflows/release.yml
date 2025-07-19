@@ -36,27 +36,59 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        echo "Dependencies installed successfully"
 
-    - name: Create executable with PyInstaller
+    - name: Test Flask app import
       run: |
-        pyinstaller flask-finance.spec
+        python -c "import app; print('Flask app imports successfully')"
 
-    - name: Rename executable (Linux/macOS)
+    - name: Create executable with PyInstaller (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        mv dist/flask-finance dist/${{ matrix.artifact_name }}
+        echo "Starting PyInstaller build for ${{ matrix.artifact_name }}..."
+        pyinstaller --onefile --name ${{ matrix.artifact_name }} \
+          --add-data "templates:templates" \
+          --add-data "static:static" \
+          --hidden-import flask \
+          --hidden-import sqlalchemy \
+          --hidden-import werkzeug \
+          --hidden-import jinja2 \
+          --hidden-import models.transaction \
+          --hidden-import models.loan \
+          --hidden-import models.investment \
+          --hidden-import models.account \
+          --hidden-import models.budget \
+          --hidden-import database \
+          app.py
+        echo "PyInstaller build completed"
+        ls -la dist/
 
-    - name: Rename executable (Windows)
+    - name: Create executable with PyInstaller (Windows)
       if: runner.os == 'Windows'
       run: |
-        move dist/flask-finance.exe dist/${{ matrix.artifact_name }}
+        echo "Starting PyInstaller build for ${{ matrix.artifact_name }}..."
+        pyinstaller --onefile --name ${{ matrix.artifact_name }} \
+          --add-data "templates;templates" \
+          --add-data "static;static" \
+          --hidden-import flask \
+          --hidden-import sqlalchemy \
+          --hidden-import werkzeug \
+          --hidden-import jinja2 \
+          --hidden-import models.transaction \
+          --hidden-import models.loan \
+          --hidden-import models.investment \
+          --hidden-import models.account \
+          --hidden-import models.budget \
+          --hidden-import database \
+          app.py
+        echo "PyInstaller build completed"
+        dir dist
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: dist/${{ matrix.artifact_name }}
+        path: dist/${{ matrix.artifact_name }}*
 
   release:
     needs: build
