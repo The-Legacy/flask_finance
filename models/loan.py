@@ -20,6 +20,14 @@ class Loan(db.Model):
         monthly_rate = self.interest_rate / 100 / 12
         return self.balance * monthly_rate
     
+    def effective_minimum_payment(self):
+        """Calculate the effective minimum payment (can't be more than balance)"""
+        return min(self.minimum_payment, self.balance)
+    
+    def is_overpaid(self):
+        """Check if minimum payment is higher than balance"""
+        return self.minimum_payment > self.balance
+    
     def credit_utilization(self, credit_limit=None):
         """Calculate credit utilization percentage for credit cards"""
         if self.loan_type == 'credit_card' and credit_limit:
@@ -28,16 +36,18 @@ class Loan(db.Model):
     
     def payoff_time_months(self):
         """Estimate months to pay off with minimum payments"""
-        if self.minimum_payment <= self.monthly_interest_payment():
+        effective_payment = self.effective_minimum_payment()
+        
+        if effective_payment <= self.monthly_interest_payment():
             return None  # Will never pay off
         
         monthly_rate = self.interest_rate / 100 / 12
         if monthly_rate == 0:
-            return self.balance / self.minimum_payment
+            return self.balance / effective_payment
         
         # Formula for loan payoff time
         import math
-        numerator = -math.log(1 - (monthly_rate * self.balance / self.minimum_payment))
+        numerator = -math.log(1 - (monthly_rate * self.balance / effective_payment))
         denominator = math.log(1 + monthly_rate)
         return numerator / denominator
     

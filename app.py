@@ -28,16 +28,17 @@ from utils.tax_calculator import TaxCalculator
 def init_db():
     with app.app_context():
         db.create_all()
+        print(f"Database tables created/verified at: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
-# Ensure database is initialized when the app starts
-try:
-    init_db()
-except Exception as e:
-    print(f"Database initialization will be attempted on first request: {e}")
+# Initialize database when running as main module or importing
+def ensure_db_initialized():
+    try:
+        init_db()
+    except Exception as e:
+        print(f"Database initialization error: {e}")
 
-# Initialize database when running as main module
-if __name__ == '__main__':
-    init_db()
+# Call initialization
+ensure_db_initialized()
 
 @app.route('/')
 def index():
@@ -167,41 +168,15 @@ def dashboard():
             }
         except Exception as e:
             print(f"Error calculating tax breakdown: {e}")
-    
-    # Tax cost breakdown (if budget exists, get estimated tax info)
-    tax_breakdown = None
-    if active_budget:
-        try:
-            calculator = TaxCalculator()
-            tax_info = calculator.calculate_taxes(
-                active_budget.annual_income, 
-                active_budget.employment_type, 
-                'single',  # Default filing status for now
-                active_budget.state_code, 
-                active_budget.city_code
-            )
-            tax_breakdown = {
-                'annual_income': active_budget.annual_income,
-                'monthly_taxes': active_budget.monthly_taxes,
-                'tax_details': {
-                    'federal_income': tax_info.get('federal_income_tax', 0),
-                    'federal_payroll': tax_info.get('payroll_taxes', {}).get('total_payroll', 0) if active_budget.employment_type == 'w2' else 0,
-                    'self_employment': tax_info.get('self_employment_tax', 0) if active_budget.employment_type == '1099' else 0,
-                    'state_tax': tax_info.get('state_tax_info', {}).get('state_tax', 0),
-                    'local_tax': tax_info.get('local_tax_info', {}).get('local_tax', 0),
-                    'total_annual': tax_info.get('total_tax_owed', 0)
-                },
-                'state_name': tax_info.get('state_tax_info', {}).get('state_name', 'No State Tax'),
-                'city_name': tax_info.get('local_tax_info', {}).get('city_name', 'No Local Tax'),
-                'effective_rate': tax_info.get('effective_tax_rate', 0)
-            }
-        except Exception as e:
-            print(f"Error calculating tax breakdown: {e}")
             tax_breakdown = None
 
     # Budget vs Actual Analysis
     budget_analysis = None
     if active_budget:
+        print(f"Active budget found: {active_budget.name}")
+        print(f"Period transactions count: {len(period_transactions)}")
+        print(f"Period expense transactions: {len([t for t in period_transactions if t.transaction_type == 'expense'])}")
+        
         # Use the period transactions for budget analysis
         period_expense_transactions = [t for t in period_transactions if t.transaction_type == 'expense']
         
@@ -322,6 +297,10 @@ def dashboard():
             'days_in_period': days_in_period,
             'period_name': period_name  # Add period name for display
         }
+        print(f"Budget analysis created with total_budgeted: {budget_analysis['total_budgeted']}")
+        print(f"Active budget total allocation: {active_budget.get_total_allocated()}")
+    else:
+        print("No active budget found")
     
     # Get active accounts for transaction form
     accounts = Account.query.filter_by(is_active=True).order_by(Account.name).all()
@@ -370,7 +349,7 @@ def transactions():
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
     
-    # Get current month transactions (recent transactions)
+    # Get transactions based on filters
     from datetime import datetime, timedelta
     from sqlalchemy import extract, func
     
@@ -379,25 +358,40 @@ def transactions():
     next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
     current_month_end = (next_month - timedelta(days=1)).date()
     
-    # Build query for current month recent transactions
-    recent_query = Transaction.query.filter(
-        Transaction.date >= current_month_start,
-        Transaction.date <= current_month_end
-    )
+    # Build the main transactions query
+    # If date filters are provided, use them; otherwise default to current month
+    if start_date or end_date:
+        # User has specified date filters - search all transactions in that range
+        recent_query = Transaction.query
+        
+        if start_date:
+            filter_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+            recent_query = recent_query.filter(Transaction.date >= filter_start)
+        
+        if end_date:
+            filter_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+            recent_query = recent_query.filter(Transaction.date <= filter_end)
+            
+        # If no start date provided but end date is, show from beginning of time to end date
+        # If no end date provided but start date is, show from start date to current date
+        if not start_date and end_date:
+            # No additional filter needed, already filtered to end_date
+            pass
+        elif start_date and not end_date:
+            # No additional filter needed, already filtered from start_date
+            pass
+    else:
+        # No date filters provided - show current month transactions
+        recent_query = Transaction.query.filter(
+            Transaction.date >= current_month_start,
+            Transaction.date <= current_month_end
+        )
     
-    # Apply filters to recent transactions
+    # Apply category and type filters
     if category_filter:
         recent_query = recent_query.filter(Transaction.category.ilike(f'%{category_filter}%'))
     if type_filter:
         recent_query = recent_query.filter(Transaction.transaction_type == type_filter)
-    if start_date:
-        recent_start = datetime.strptime(start_date, '%Y-%m-%d').date()
-        if recent_start >= current_month_start:
-            recent_query = recent_query.filter(Transaction.date >= recent_start)
-    if end_date:
-        recent_end = datetime.strptime(end_date, '%Y-%m-%d').date()
-        if recent_end <= current_month_end:
-            recent_query = recent_query.filter(Transaction.date <= recent_end)
     
     recent_transactions = recent_query.order_by(Transaction.date.desc()).all()
     
@@ -538,7 +532,9 @@ def delete_transaction(transaction_id):
 @app.route('/loans')
 def loans():
     loans = Loan.query.all()
-    return render_template('loans.html', loans=loans)
+    # Calculate total effective monthly payments
+    total_monthly_payments = sum(loan.effective_minimum_payment() for loan in loans)
+    return render_template('loans.html', loans=loans, total_monthly_payments=total_monthly_payments)
 
 @app.route('/add_loan', methods=['POST'])
 def add_loan():
@@ -570,6 +566,43 @@ def delete_loan(loan_id):
         flash(f'Error deleting loan: {str(e)}', 'error')
     
     return redirect(url_for('loans'))
+
+@app.route('/update_loan/<int:loan_id>', methods=['POST'])
+def update_loan(loan_id):
+    try:
+        loan = Loan.query.get_or_404(loan_id)
+        
+        # Update loan fields
+        loan.name = request.form['name']
+        loan.balance = float(request.form['balance'])
+        loan.interest_rate = float(request.form['interest_rate'])
+        loan.minimum_payment = float(request.form['minimum_payment'])
+        loan.due_date = datetime.strptime(request.form['due_date'], '%Y-%m-%d').date()
+        loan.loan_type = request.form['loan_type']
+        
+        db.session.commit()
+        flash(f'Loan "{loan.name}" updated successfully!', 'success')
+    except Exception as e:
+        flash(f'Error updating loan: {str(e)}', 'error')
+    
+    return redirect(url_for('loans'))
+
+@app.route('/get_loan/<int:loan_id>')
+def get_loan(loan_id):
+    """API endpoint to get loan data for editing"""
+    try:
+        loan = Loan.query.get_or_404(loan_id)
+        return jsonify({
+            'id': loan.id,
+            'name': loan.name,
+            'balance': loan.balance,
+            'interest_rate': loan.interest_rate,
+            'minimum_payment': loan.minimum_payment,
+            'due_date': loan.due_date.strftime('%Y-%m-%d'),
+            'loan_type': loan.loan_type
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/investments')
 def investments():
@@ -619,7 +652,7 @@ def budget():
     loans = Loan.query.all()
     
     # Calculate total monthly debt payments
-    total_monthly_debt = sum(loan.minimum_payment for loan in loans)
+    total_monthly_debt = sum(loan.effective_minimum_payment() for loan in loans)
     
     # Get recent transactions to analyze spending patterns
     recent_transactions = Transaction.query.filter(
@@ -673,7 +706,7 @@ def calculate_budget():
         
         # Get loan data
         loans = Loan.query.all()
-        total_monthly_debt = sum(loan.minimum_payment for loan in loans)
+        total_monthly_debt = sum(loan.effective_minimum_payment() for loan in loans)
         
         # Calculate available for allocation after debt payments
         available_for_budget = monthly_net - total_monthly_debt
@@ -1088,5 +1121,6 @@ def monthly_transactions():
     return redirect(url_for('transactions'))
 
 if __name__ == '__main__':
-    init_db()
+    # Ensure database is initialized before starting the server
+    ensure_db_initialized()
     app.run(debug=True, port=8001)
