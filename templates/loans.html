@@ -17,27 +17,38 @@
 <!-- Summary Cards -->
 {% if loans %}
 <div class="row mb-4">
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
         <div class="card bg-danger text-white">
             <div class="card-body text-center">
                 <h6>Total Debt</h6>
-                <h3>${{ "%.2f"|format(loans|map(attribute='balance')|sum) }}</h3>
+                <h3>${{ "%.2f"|format(total_debt) }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
         <div class="card bg-warning text-white">
             <div class="card-body text-center">
                 <h6>Monthly Payments</h6>
                 <h3>${{ "%.2f"|format(total_monthly_payments) }}</h3>
+                <small>Min: ${{ "%.2f"|format(total_minimum_payments) }}</small>
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
         <div class="card bg-info text-white">
             <div class="card-body text-center">
-                <h6>Active Accounts</h6>
-                <h3>{{ loans|length }}</h3>
+                <h6>Interest Paid</h6>
+                <h3>${{ "%.2f"|format(total_interest_paid) }}</h3>
+                <small>Lifetime total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card bg-secondary text-white">
+            <div class="card-body text-center">
+                <h6>Projected Interest</h6>
+                <h3>${{ "%.2f"|format(total_projected_interest) }}</h3>
+                <small>Remaining to pay</small>
             </div>
         </div>
     </div>
@@ -57,7 +68,7 @@
                     <div class="card mb-3">
                         <div class="card-body">
                             <div class="row align-items-center">
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <h6 class="card-title mb-1">{{ loan.name }}</h6>
                                     <span class="badge {% if loan.loan_type == 'credit_card' %}bg-warning{% elif loan.loan_type == 'mortgage' %}bg-primary{% else %}bg-secondary{% endif %}">
                                         {{ loan.loan_type.replace('_', ' ').title() }}
@@ -67,28 +78,59 @@
                                     <small class="text-muted">Balance</small>
                                     <div class="fw-bold text-danger">${{ "%.2f"|format(loan.balance) }}</div>
                                 </div>
-                                <div class="col-md-2 text-center">
-                                    <small class="text-muted">Interest Rate</small>
+                                <div class="col-md-1 text-center">
+                                    <small class="text-muted">APR</small>
                                     <div class="fw-bold">{{ "%.2f"|format(loan.interest_rate) }}%</div>
                                 </div>
                                 <div class="col-md-2 text-center">
-                                    <small class="text-muted">Min Payment</small>
-                                    <div class="fw-bold">
-                                        {% if loan.is_overpaid() %}
-                                            <span class="text-warning" title="Payment exceeds balance">
-                                                ${{ "%.2f"|format(loan.effective_minimum_payment()) }}*
-                                            </span>
-                                        {% else %}
-                                            ${{ "%.2f"|format(loan.minimum_payment) }}
-                                        {% endif %}
+                                    <small class="text-muted">Required Payment</small>
+                                    <div class="fw-bold text-primary">
+                                        ${{ "%.2f"|format(loan.calculate_monthly_payment()) }}
                                     </div>
-                                    {% if loan.is_overpaid() %}
-                                        <small class="text-warning">*Capped at balance</small>
+                                    {% if loan.target_payoff_months %}
+                                        <small class="text-info">{{ loan.target_payoff_months }} month plan</small>
+                                    {% else %}
+                                        <small class="text-muted">Auto calculated</small>
                                     {% endif %}
                                 </div>
                                 <div class="col-md-2 text-center">
-                                    <small class="text-muted">Due Date</small>
-                                    <div class="fw-bold">{{ loan.due_date.strftime('%m/%d/%Y') }}</div>
+                                    <small class="text-muted">Monthly Interest Cost</small>
+                                    <div class="fw-bold text-danger">
+                                        ${{ "%.2f"|format(loan.monthly_interest_payment()) }}
+                                    </div>
+                                    {% set payoff_summary = loan.calculate_payoff_summary() %}
+                                    {% if payoff_summary %}
+                                        <small class="text-warning">Total remaining: ${{ "%.0f"|format(payoff_summary.total_interest - loan.total_interest_paid) }}</small>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-2 text-center">
+                                    <small class="text-muted">This Month</small>
+                                    {% if loan.current_month_paid >= loan.calculate_monthly_payment() %}
+                                        <div class="fw-bold text-success">
+                                            <i class="bi bi-check-circle"></i> Paid
+                                        </div>
+                                        <small class="text-success">${{ "%.2f"|format(loan.current_month_paid) }}</small>
+                                    {% else %}
+                                        <div class="fw-bold text-warning">
+                                            ${{ "%.2f"|format(loan.current_month_paid) }}
+                                        </div>
+                                        <small class="text-muted">Need: ${{ "%.2f"|format(loan.remaining_payment_this_month()) }}</small>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-2 text-center">
+                                    <button class="btn btn-sm btn-primary mb-1" onclick="showPaymentModal('{{ loan.id }}')">
+                                        <i class="bi bi-credit-card"></i> Make Payment
+                                    </button>
+                                    <br>
+                                    <button class="btn btn-sm btn-outline-secondary mb-1" onclick="showPayoffTermsModal('{{ loan.id }}')">
+                                        <i class="bi bi-calendar"></i> Adjust Terms
+                                    </button>
+                                    <div class="btn-group w-100" role="group">
+                                        <button class="btn btn-sm btn-outline-info" onclick="quickSetTerms({{ loan.id }}, 12)">1y</button>
+                                        <button class="btn btn-sm btn-outline-info" onclick="quickSetTerms({{ loan.id }}, 36)">3y</button>
+                                        <button class="btn btn-sm btn-outline-info" onclick="quickSetTerms({{ loan.id }}, 60)">5y</button>
+                                    </div>
+                                    </button>
                                 </div>
                                 <div class="col-md-1 text-center">
                                     <div class="dropdown">
@@ -105,26 +147,67 @@
                             
                             <!-- Additional Info -->
                             <div class="row mt-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="progress" style="height: 20px;">
-                                        <div class="progress-bar bg-danger" role="progressbar" style="width: 75%">
-                                            Debt Level
+                                        {% set completion_pct = ((loan.total_payments_made / (loan.original_amount or loan.balance)) * 100) if (loan.original_amount or loan.balance) > 0 else 0 %}
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ "%.0f"|format(completion_pct) }}%">
+                                            {{ "%.0f"|format(completion_pct) }}% Paid
                                         </div>
                                     </div>
                                     <small class="text-muted">
-                                        Monthly Interest: ${{ "%.2f"|format(loan.monthly_interest_payment()) }}
+                                        Total Paid: ${{ "%.2f"|format(loan.total_payments_made) }} 
+                                        ({{ loan.payment_count }} payments)
                                     </small>
                                 </div>
-                                <div class="col-md-6">
-                                    {% if loan.payoff_time_months() %}
-                                        <small class="text-muted">
-                                            Payoff Time (min payments): {{ "%.0f"|format(loan.payoff_time_months()) }} months
-                                        </small>
+                                <div class="col-md-4">
+                                    <div class="text-center">
+                                        <small class="text-muted">Interest Paid So Far</small><br>
+                                        <strong class="text-warning">${{ "%.2f"|format(loan.total_interest_paid) }}</strong>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    {% set payoff_summary = loan.calculate_payoff_summary() %}
+                                    {% if payoff_summary %}
+                                        <div class="text-center">
+                                            <small class="text-muted">Payoff Date</small><br>
+                                            <strong class="text-info">{{ payoff_summary.payoff_date.strftime('%b %Y') if payoff_summary.payoff_date else 'N/A' }}</strong><br>
+                                            <small class="text-muted">{{ payoff_summary.months_remaining }} months left</small>
+                                        </div>
                                     {% else %}
-                                        <small class="text-warning">⚠️ Minimum payment doesn't cover interest</small>
+                                        <small class="text-warning">⚠️ Payment too low - adjust terms</small>
                                     {% endif %}
                                 </div>
                             </div>
+                            
+                            <!-- Interest Breakdown -->
+                            {% if payoff_summary %}
+                            <div class="row mt-2">
+                                <div class="col-12">
+                                    <div class="card bg-light">
+                                        <div class="card-body py-2">
+                                            <div class="row text-center">
+                                                <div class="col-md-3">
+                                                    <small class="text-muted">Monthly Interest</small><br>
+                                                    <strong class="text-danger">${{ "%.2f"|format(payoff_summary.monthly_interest) }}</strong>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <small class="text-muted">Monthly Principal</small><br>
+                                                    <strong class="text-success">${{ "%.2f"|format(payoff_summary.monthly_principal) }}</strong>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <small class="text-muted">Total Interest (Remaining)</small><br>
+                                                    <strong class="text-warning">${{ "%.2f"|format(payoff_summary.total_interest - loan.total_interest_paid) }}</strong>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <small class="text-muted">Total Cost</small><br>
+                                                    <strong class="text-info">${{ "%.2f"|format(payoff_summary.total_payments) }}</strong>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -426,6 +509,404 @@ function checkPaymentWarning() {
     } else {
         warningDiv.style.display = 'none';
     }
+}
+</script>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Make Loan Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="paymentForm">
+                <div class="modal-body">
+                    <div id="loan-payment-info" class="mb-3">
+                        <!-- Loan info will be populated here -->
+                    </div>
+                    <div class="mb-3">
+                        <label for="account_id" class="form-label">Pay From Account</label>
+                        <select class="form-select" name="account_id" id="account_id">
+                            <option value="">Select Account (Optional)</option>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }} - ${{ "%.2f"|format(account.balance) }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Choose which account to deduct the payment from</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="payment_amount" class="form-label">Payment Amount *</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="payment_amount" name="payment_amount" 
+                                   step="0.01" min="0.01" required>
+                        </div>
+                        <div class="form-text">
+                            <span id="remaining-payment-text"></span>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-outline-primary btn-sm w-100" onclick="setPaymentAmount('remaining')">
+                                Pay Remaining
+                            </button>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-outline-success btn-sm w-100" onclick="setPaymentAmount('double')">
+                                Double Payment
+                            </button>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-outline-info btn-sm w-100" onclick="setPaymentAmount('balance')">
+                                Pay Balance
+                            </button>
+                        </div>
+                    </div>
+                    <div id="payment-breakdown" class="mt-3" style="display: none;">
+                        <div class="alert alert-info">
+                            <h6>Payment Impact Preview:</h6>
+                            <div class="row">
+                                <div class="col-6">
+                                    <small>Interest Portion:</small><br>
+                                    <strong class="text-danger">$<span id="interest-portion">0.00</span></strong>
+                                </div>
+                                <div class="col-6">
+                                    <small>Principal Portion:</small><br>
+                                    <strong class="text-success">$<span id="principal-portion">0.00</span></strong>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <small>New Balance After Payment:</small><br>
+                                <strong>$<span id="new-balance">0.00</span></strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Make Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Payoff Terms Modal -->
+<div class="modal fade" id="payoffTermsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Set Payoff Terms</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="payoffTermsForm">
+                <div class="modal-body">
+                    <div id="loan-terms-info" class="mb-3">
+                        <!-- Loan info will be populated here -->
+                    </div>
+                    <div class="mb-3">
+                        <label for="target_payoff_months" class="form-label">Target Payoff Timeline</label>
+                        <select class="form-select" id="target_payoff_months" name="target_payoff_months">
+                            <option value="">Auto Calculate (Based on loan type)</option>
+                            <option value="6">6 Months</option>
+                            <option value="12">1 Year</option>
+                            <option value="18">1.5 Years</option>
+                            <option value="24">2 Years</option>
+                            <option value="36">3 Years</option>
+                            <option value="48">4 Years</option>
+                            <option value="60">5 Years</option>
+                            <option value="72">6 Years</option>
+                            <option value="84">7 Years</option>
+                            <option value="120">10 Years</option>
+                            <option value="180">15 Years</option>
+                            <option value="240">20 Years</option>
+                            <option value="360">30 Years</option>
+                        </select>
+                    </div>
+                    <div id="payment-preview" class="alert alert-info" style="display: none;">
+                        <strong>Estimated Monthly Payment:</strong> <span id="estimated-payment"></span><br>
+                        <strong>Total Interest:</strong> <span id="total-interest"></span><br>
+                        <strong>Total Payments:</strong> <span id="total-payments"></span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Terms</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentLoanId = null;
+let currentLoanData = {};
+
+// Show payment modal
+function showPaymentModal(loanId) {
+    currentLoanId = loanId;
+    
+    // Get loan status
+    fetch(`/get_loan_status/${loanId}`)
+        .then(response => response.json())
+        .then(data => {
+            currentLoanData = data;
+            
+            // Populate loan info
+            document.getElementById('loan-payment-info').innerHTML = `
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6 class="card-title">${data.name}</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <small class="text-muted">Balance:</small><br>
+                                <strong class="text-danger">$${data.balance.toFixed(2)}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted">Required Payment:</small><br>
+                                <strong class="text-primary">$${data.required_monthly_payment.toFixed(2)}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted">Interest Rate:</small><br>
+                                <strong>${data.interest_rate.toFixed(2)}% APR</strong>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-4">
+                                <small class="text-muted">Monthly Interest:</small><br>
+                                <strong class="text-danger">$${data.monthly_interest.toFixed(2)}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted">Paid This Month:</small><br>
+                                <strong class="${data.is_current_month_satisfied ? 'text-success' : 'text-warning'}">$${data.current_month_paid.toFixed(2)}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted">Remaining:</small><br>
+                                <strong class="text-info">$${data.remaining_payment_this_month.toFixed(2)}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Update remaining payment text
+            document.getElementById('remaining-payment-text').textContent = 
+                `Need $${data.remaining_payment_this_month.toFixed(2)} more to meet this month's requirement`;
+            
+            // Show modal
+            new bootstrap.Modal(document.getElementById('paymentModal')).show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error loading loan status');
+        });
+}
+
+// Show payoff terms modal
+function showPayoffTermsModal(loanId) {
+    currentLoanId = loanId;
+    
+    fetch(`/get_loan/${loanId}`)
+        .then(response => response.json())
+        .then(data => {
+            currentLoanData = data;
+            
+            // Populate loan info
+            document.getElementById('loan-terms-info').innerHTML = `
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6 class="card-title">${data.name}</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <small class="text-muted">Balance:</small><br>
+                                <strong class="text-danger">$${data.balance.toFixed(2)}</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted">APR:</small><br>
+                                <strong>${data.interest_rate.toFixed(2)}%</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Set current selection
+            if (data.target_payoff_months) {
+                document.getElementById('target_payoff_months').value = data.target_payoff_months;
+                updatePaymentPreview();
+            }
+            
+            // Show modal
+            new bootstrap.Modal(document.getElementById('payoffTermsModal')).show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error loading loan data');
+        });
+}
+
+// Set payment amount buttons
+function setPaymentAmount(type) {
+    const amountField = document.getElementById('payment_amount');
+    
+    switch(type) {
+        case 'remaining':
+            amountField.value = currentLoanData.remaining_payment_this_month.toFixed(2);
+            break;
+        case 'double':
+            amountField.value = (currentLoanData.required_monthly_payment * 2).toFixed(2);
+            break;
+        case 'balance':
+            amountField.value = currentLoanData.balance.toFixed(2);
+            break;
+    }
+    
+    // Show payment breakdown
+    updatePaymentBreakdown();
+}
+
+// Update payment breakdown preview
+function updatePaymentBreakdown() {
+    const paymentAmount = parseFloat(document.getElementById('payment_amount').value) || 0;
+    if (paymentAmount <= 0 || !currentLoanData.balance) {
+        document.getElementById('payment-breakdown').style.display = 'none';
+        return;
+    }
+    
+    // Calculate interest and principal portions
+    const monthlyInterest = currentLoanData.monthly_interest || (currentLoanData.balance * currentLoanData.interest_rate / 100 / 12);
+    const interestPortion = Math.min(paymentAmount, monthlyInterest);
+    const principalPortion = Math.max(0, paymentAmount - interestPortion);
+    const newBalance = Math.max(0, currentLoanData.balance - principalPortion);
+    
+    // Update display
+    document.getElementById('interest-portion').textContent = interestPortion.toFixed(2);
+    document.getElementById('principal-portion').textContent = principalPortion.toFixed(2);
+    document.getElementById('new-balance').textContent = newBalance.toFixed(2);
+    
+    document.getElementById('payment-breakdown').style.display = 'block';
+}
+
+// Update payment preview when terms change
+document.addEventListener('DOMContentLoaded', function() {
+    const termsSelect = document.getElementById('target_payoff_months');
+    if (termsSelect) {
+        termsSelect.addEventListener('change', updatePaymentPreview);
+    }
+    
+    // Handle payment form submission
+    const paymentForm = document.getElementById('paymentForm');
+    if (paymentForm) {
+        paymentForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch(`/make_loan_payment/${currentLoanId}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error making payment');
+            });
+        });
+    }
+    
+    // Add event listener to payment amount input for real-time breakdown
+    const paymentAmountInput = document.getElementById('payment_amount');
+    if (paymentAmountInput) {
+        paymentAmountInput.addEventListener('input', updatePaymentBreakdown);
+    }
+    
+    // Handle payoff terms form submission
+    const termsForm = document.getElementById('payoffTermsForm');
+    if (termsForm) {
+        termsForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch(`/update_payoff_terms/${currentLoanId}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating terms');
+            });
+        });
+    }
+});
+
+function updatePaymentPreview() {
+    const months = parseInt(document.getElementById('target_payoff_months').value);
+    if (!months || !currentLoanData.balance) return;
+    
+    const balance = currentLoanData.balance;
+    const monthlyRate = currentLoanData.interest_rate / 100 / 12;
+    
+    let monthlyPayment;
+    if (monthlyRate === 0) {
+        monthlyPayment = balance / months;
+    } else {
+        monthlyPayment = balance * monthlyRate * Math.pow(1 + monthlyRate, months) / 
+                        (Math.pow(1 + monthlyRate, months) - 1);
+    }
+    
+    const totalPayments = monthlyPayment * months;
+    const totalInterest = totalPayments - balance;
+    
+    document.getElementById('estimated-payment').textContent = `$${monthlyPayment.toFixed(2)}`;
+    document.getElementById('total-interest').textContent = `$${totalInterest.toFixed(2)}`;
+    document.getElementById('total-payments').textContent = `$${totalPayments.toFixed(2)}`;
+    document.getElementById('payment-preview').style.display = 'block';
+}
+
+// Quick terms adjustment
+function quickSetTerms(loanId, months) {
+    if (!confirm(`Set payoff term to ${months} months? This will recalculate the monthly payment.`)) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('target_payoff_months', months);
+    
+    fetch(`/update_payoff_terms/${loanId}`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating terms');
+    });
 }
 </script>
 {% endblock %}

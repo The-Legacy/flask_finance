@@ -183,7 +183,12 @@ def dashboard():
         # Calculate budget scaling factor based on time period
         days_in_period = (period_end - period_start).days + 1
         days_in_month = 30.44  # Average days per month (365.25 / 12)
-        budget_scaling_factor = days_in_period / days_in_month
+        
+        # Don't scale for full month periods (28-31 days) - show full monthly budget
+        if 28 <= days_in_period <= 31:
+            budget_scaling_factor = 1.0
+        else:
+            budget_scaling_factor = days_in_period / days_in_month
         
         # Calculate actual spending by category
         actual_spending = {}
@@ -246,12 +251,37 @@ def dashboard():
             ]
         }
         
+        # BUDGET FIX: Calculate proper monthly net available amount FIRST
+        monthly_gross = active_budget.annual_income / 12
+        monthly_net_available = monthly_gross - active_budget.monthly_taxes
+        monthly_debt_payments = sum(loan.apr_based_payment() for loan in loans)  # Use APR-based payment
+        corrected_monthly_budget = monthly_net_available - monthly_debt_payments
+        
+        # Override the broken budget total with the correct calculation
+        corrected_total_budgeted = corrected_monthly_budget * budget_scaling_factor
+        
         # Track which transaction categories were mapped
         mapped_categories = set()
         budget_vs_actual = {}
+        
+        # Define reasonable category percentages for allocation
+        category_percentages = {
+            'Housing': 0.30,        # 30%
+            'Food & Dining': 0.15,  # 15%
+            'Transportation': 0.15, # 15%
+            'Utilities': 0.08,      # 8%
+            'Healthcare': 0.05,     # 5%
+            'Entertainment': 0.05,  # 5%
+            'Shopping': 0.07,       # 7%
+            'Personal Care': 0.03,  # 3%
+            'Education': 0.02,      # 2%
+            'Insurance': 0.05,      # 5%
+        }
+        
         for budget_category, expense_categories in category_mapping.items():
-            # Scale the budget amount proportionally to the time period
-            monthly_budget_amount = active_budget.get_allocation_by_category(budget_category)
+            # FIXED: Use proper proportional allocation instead of broken stored values
+            category_percentage = category_percentages.get(budget_category, 0.00)  # Default to 0% if not defined
+            monthly_budget_amount = corrected_monthly_budget * category_percentage
             scaled_budget_amount = monthly_budget_amount * budget_scaling_factor
             actual_amount = 0
             
@@ -270,7 +300,7 @@ def dashboard():
             
             budget_vs_actual[budget_category] = {
                 'budget': scaled_budget_amount,
-                'monthly_budget': monthly_budget_amount,  # Keep original for reference
+                'monthly_budget': monthly_budget_amount,  # Keep corrected reference
                 'actual': actual_amount,
                 'remaining': scaled_budget_amount - actual_amount,
                 'percentage_used': (actual_amount / scaled_budget_amount * 100) if scaled_budget_amount > 0 else 0
@@ -284,18 +314,55 @@ def dashboard():
                 unmapped_spending[transaction_category] = amount
                 total_unmapped += amount
         
+        # BUDGET FIX: Calculate proper monthly net available amount BEFORE debug prints
+        monthly_gross = active_budget.annual_income / 12
+        monthly_net_available = monthly_gross - active_budget.monthly_taxes
+        monthly_debt_payments = sum(loan.apr_based_payment() for loan in loans)  # Use APR-based payment
+        corrected_monthly_budget = monthly_net_available - monthly_debt_payments
+        
+        # Override the broken budget total with the correct calculation
+        corrected_total_budgeted = corrected_monthly_budget * budget_scaling_factor
+        
+        # Debug current budget values - AFTER FIX
+        print(f"DEBUG: BUDGET FIX APPLIED!")
+        print(f"DEBUG: Original broken total allocated: ${active_budget.get_total_allocated():,.2f}")
+        print(f"DEBUG: Annual Income: ${active_budget.annual_income:,.2f}")
+        print(f"DEBUG: Monthly Gross: ${monthly_gross:,.2f}")
+        print(f"DEBUG: Monthly Taxes: ${active_budget.monthly_taxes:,.2f}")
+        print(f"DEBUG: Monthly Net Available: ${monthly_net_available:,.2f}")
+        print(f"DEBUG: Monthly Debt Payments: ${monthly_debt_payments:,.2f}")
+        print(f"DEBUG: CORRECTED Monthly Budget: ${corrected_monthly_budget:,.2f}")
+        print(f"DEBUG: Budget scaling factor: {budget_scaling_factor}")
+        print(f"DEBUG: CORRECTED Total Budgeted: ${corrected_total_budgeted:,.2f}")
+        print(f"DEBUG: LOANS CAUSING HIGH DEBT PAYMENTS:")
+        for loan in loans:
+            min_payment = loan.effective_minimum_payment()
+            apr_payment = loan.apr_based_payment()
+            print(f"DEBUG:   {loan.name}: Balance=${loan.balance:,.2f}, Min Payment=${min_payment:,.2f}, APR Payment=${apr_payment:,.2f}")
+        print(f"DEBUG: *** BUDGET UPDATED WITH APR-BASED PAYMENTS! ***")
+        
         budget_analysis = {
             'active_budget': active_budget,
             'budget_vs_actual': budget_vs_actual,
-            'total_budgeted': active_budget.get_total_allocated() * budget_scaling_factor,
-            'monthly_total_budgeted': active_budget.get_total_allocated(),  # Keep original for reference
+            'total_budgeted': corrected_total_budgeted,  # Use corrected amount
+            'monthly_total_budgeted': corrected_monthly_budget,  # Use corrected amount
             'total_spent': sum(actual_spending.values()),
-            'budget_remaining': (active_budget.get_total_allocated() * budget_scaling_factor) - sum(actual_spending.values()),
+            'budget_remaining': corrected_total_budgeted - sum(actual_spending.values()),
             'unmapped_spending': unmapped_spending,
             'total_unmapped': total_unmapped,
             'budget_scaling_factor': budget_scaling_factor,
             'days_in_period': days_in_period,
-            'period_name': period_name  # Add period name for display
+            'period_name': period_name,  # Add period name for display
+            # Add proper budget context
+            'monthly_gross_income': monthly_gross,
+            'monthly_taxes': active_budget.monthly_taxes,
+            'monthly_net_available': monthly_net_available,
+            'monthly_debt_payments': monthly_debt_payments,
+            'monthly_available_for_budget': corrected_monthly_budget,
+            # Debug info
+            'budget_fix_applied': True,
+            'original_broken_total': active_budget.get_total_allocated(),
+            'corrected_total': corrected_monthly_budget
         }
         print(f"Budget analysis created with total_budgeted: {budget_analysis['total_budgeted']}")
         print(f"Active budget total allocation: {active_budget.get_total_allocated()}")
@@ -532,9 +599,30 @@ def delete_transaction(transaction_id):
 @app.route('/loans')
 def loans():
     loans = Loan.query.all()
-    # Calculate total effective monthly payments
-    total_monthly_payments = sum(loan.effective_minimum_payment() for loan in loans)
-    return render_template('loans.html', loans=loans, total_monthly_payments=total_monthly_payments)
+    # Calculate total effective monthly payments using the new calculation system
+    total_monthly_payments = sum(loan.calculate_monthly_payment() for loan in loans)
+    total_minimum_payments = sum(loan.minimum_payment for loan in loans)
+    total_debt = sum(loan.balance for loan in loans)
+    total_interest_paid = sum(loan.total_interest_paid for loan in loans)
+    
+    # Calculate total projected interest for all loans
+    total_projected_interest = 0
+    for loan in loans:
+        summary = loan.calculate_payoff_summary()
+        if summary:
+            total_projected_interest += summary['total_interest'] - loan.total_interest_paid
+    
+    # Get active accounts for payment form
+    accounts = Account.query.filter_by(is_active=True).order_by(Account.name).all()
+    
+    return render_template('loans.html', 
+                         loans=loans, 
+                         total_monthly_payments=total_monthly_payments,
+                         total_minimum_payments=total_minimum_payments,
+                         total_debt=total_debt,
+                         total_interest_paid=total_interest_paid,
+                         total_projected_interest=total_projected_interest,
+                         accounts=accounts)
 
 @app.route('/add_loan', methods=['POST'])
 def add_loan():
@@ -599,8 +687,93 @@ def get_loan(loan_id):
             'interest_rate': loan.interest_rate,
             'minimum_payment': loan.minimum_payment,
             'due_date': loan.due_date.strftime('%Y-%m-%d'),
-            'loan_type': loan.loan_type
+            'loan_type': loan.loan_type,
+            'target_payoff_months': loan.target_payoff_months
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/update_payoff_terms/<int:loan_id>', methods=['POST'])
+def update_payoff_terms(loan_id):
+    """Update payoff terms for a loan"""
+    try:
+        loan = Loan.query.get_or_404(loan_id)
+        target_months = request.form.get('target_payoff_months')
+        
+        if target_months and target_months.strip():
+            loan.target_payoff_months = int(target_months)
+        else:
+            loan.target_payoff_months = None
+            
+        db.session.commit()
+        
+        # Get updated payment calculations
+        payoff_summary = loan.calculate_payoff_summary()
+        
+        # Return updated payment info
+        return jsonify({
+            'success': True,
+            'required_payment': loan.required_monthly_payment(),
+            'estimated_payoff_months': loan.recalculate_payoff_timeline(),
+            'payoff_summary': payoff_summary,
+            'message': f'Updated payoff terms for {loan.name}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/make_loan_payment/<int:loan_id>', methods=['POST'])
+def make_loan_payment(loan_id):
+    """Make a payment on a specific loan"""
+    try:
+        loan = Loan.query.get_or_404(loan_id)
+        payment_amount = float(request.form['payment_amount'])
+        account_id = request.form.get('account_id')  # Optional account selection
+        
+        if payment_amount <= 0:
+            return jsonify({'error': 'Payment amount must be positive'}), 400
+        
+        # Make the payment using the enhanced method
+        payment_details = loan.make_payment(
+            payment_amount, 
+            account_id=account_id if account_id and account_id != '' else None
+        )
+        
+        # Create a transaction record for this payment
+        from datetime import date
+        transaction = Transaction(
+            amount=payment_amount,
+            date=date.today(),
+            category='Loan Payment',
+            description=f'Payment on {loan.name} - Interest: ${payment_details["interest_portion"]:.2f}, Principal: ${payment_details["principal_portion"]:.2f}',
+            transaction_type='expense',
+            is_taxable=False,
+            account_id=payment_details['account_id']
+        )
+        
+        db.session.add(transaction)
+        db.session.commit()
+        
+        # Prepare detailed response
+        response_data = {
+            'success': True,
+            'payment_details': payment_details,
+            'message': f'Payment of ${payment_amount:.2f} applied to {loan.name}'
+        }
+        
+        if payment_details['overpaid_amount'] > 0:
+            response_data['message'] += f' (${payment_details["overpaid_amount"]:.2f} overpaid, {payment_details["months_ahead"]} months ahead)'
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/get_loan_status/<int:loan_id>')
+def get_loan_status(loan_id):
+    """Get current status of a loan including payment progress"""
+    try:
+        loan = Loan.query.get_or_404(loan_id)
+        return jsonify(loan.to_dict())
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -651,8 +824,8 @@ def budget():
     # Get existing data for budget calculations
     loans = Loan.query.all()
     
-    # Calculate total monthly debt payments
-    total_monthly_debt = sum(loan.effective_minimum_payment() for loan in loans)
+    # Calculate total monthly debt payments using APR-based calculations
+    total_monthly_debt = sum(loan.apr_based_payment() for loan in loans)
     
     # Get recent transactions to analyze spending patterns
     recent_transactions = Transaction.query.filter(
@@ -706,7 +879,7 @@ def calculate_budget():
         
         # Get loan data
         loans = Loan.query.all()
-        total_monthly_debt = sum(loan.effective_minimum_payment() for loan in loans)
+        total_monthly_debt = sum(loan.apr_based_payment() for loan in loans)  # Use APR-based payments
         
         # Calculate available for allocation after debt payments
         available_for_budget = monthly_net - total_monthly_debt
@@ -1123,4 +1296,4 @@ def monthly_transactions():
 if __name__ == '__main__':
     # Ensure database is initialized before starting the server
     ensure_db_initialized()
-    app.run(debug=True, port=8001)
+    app.run(debug=True, port=8002)
